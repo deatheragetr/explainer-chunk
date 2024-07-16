@@ -1,7 +1,12 @@
 <template>
     <div class="pdf-viewer">
       <div v-if="loading" class="loading">Loading PDF...</div>
+      <div class="pdf-container">
       <canvas ref="pdfCanvas"></canvas>
+      <div class="textLayer" ref="textLayer"></div>
+    </div>
+      <!-- <canvas ref="pdfCanvas"></canvas>
+      <div class="textLayer" ref="textLayer"></div> -->
       <div class="controls">
         <button @click="prevPage" :disabled="currentPage === 1">Previous</button>
         <span>Page {{ currentPage }} of {{ totalPages }}</span>
@@ -13,6 +18,7 @@
   <script lang="ts">
   import { defineComponent, ref, onMounted, watch } from 'vue';
   import * as pdfjsLib from 'pdfjs-dist/webpack.mjs';
+  import { TextLayer } from 'pdfjs-dist';
 
   import PDFWorker from 'pdfjs-dist/build/pdf.worker.mjs?worker';
   pdfjsLib.GlobalWorkerOptions.workerPort = new PDFWorker();
@@ -27,29 +33,47 @@
     },
     setup(props) {
       const pdfCanvas = ref<HTMLCanvasElement | null>(null);
+      const textLayer = ref<HTMLDivElement | null>(null);
       const loading = ref(true);
       const currentPage = ref(1);
       const totalPages = ref(0);
       let pdfDoc: any = null;
+
   
       const renderPage = async (pageNum: number) => {
         if (!pdfDoc) return;
-        
         const page = await pdfDoc.getPage(pageNum);
         const scale = 1.5;
         const viewport = page.getViewport({ scale });
-  
+
         if (pdfCanvas.value) {
           const context = pdfCanvas.value.getContext('2d');
           pdfCanvas.value.height = viewport.height;
           pdfCanvas.value.width = viewport.width;
-  
+
           const renderContext = {
             canvasContext: context!,
             viewport: viewport
           };
-  
-          await page.render(renderContext);
+
+          const renderTask = page.render(renderContext);
+
+          if (textLayer.value) {
+            textLayer.value.innerHTML = '';
+
+            const textContent = await page.getTextContent();
+            const textLayerTask = new TextLayer({
+              textContentSource: textContent,
+              viewport: viewport,
+              container: textLayer.value,
+              textDivs: [],
+              enhanceTextSelection: true
+            });
+            await textLayerTask.render();
+          }
+
+          await renderTask.promise;
+
         }
       };
   
@@ -99,6 +123,7 @@
   
       return {
         pdfCanvas,
+        textLayer,
         loading,
         currentPage,
         totalPages,
@@ -110,6 +135,47 @@
   </script>
   
   <style scoped>
+  .pdf-viewer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .pdf-container {
+    position: relative;
+  }
+
+  .textLayer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    opacity: 0.2;
+    line-height: 1.0;
+  }
+
+  .textLayer > span {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+  }
+
+  .textLayer .highlight {
+    margin: -1px;
+    padding: 1px;
+    background-color: rgb(180, 0, 170);
+    border-radius: 4px;
+  }
+
+  .textLayer .highlight.selected {
+    background-color: rgb(0, 100, 0);
+  }
+
+
   .pdf-viewer {
     display: flex;
     flex-direction: column;
