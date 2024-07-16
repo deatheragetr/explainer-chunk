@@ -16,6 +16,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "@headlessui/vue": "^1.7.22",
     "pdfjs-dist": "^4.4.168",
     "pinia": "^2.1.7",
     "vue": "^3.4.29",

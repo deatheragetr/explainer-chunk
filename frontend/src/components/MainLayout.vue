@@ -4,30 +4,14 @@
     <div class="w-1/2 p-4 bg-white shadow-lg overflow-auto">
       <h2 class="text-2xl font-bold mb-4">Document Viewer</h2>
 
-      <!-- Input for URL -->
-      <div class="mb-4">
-        <input 
-          v-model="url"
-          @keyup.enter="loadContent"
-          class="w-full p-2 border rounded"
-          placeholder="Enter PDF or website URL"
-        />
-        <button @click="loadContent" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-          Load Content
-        </button>
-      </div>
+      <button 
+        @click="openModal" 
+        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
+      >
+        Add Website or Document
+      </button>
 
-      <!-- File input for PDF -->
-      <input 
-        type="file" 
-        @change="handleFileUpload" 
-        accept="application/pdf"
-        class="mb-4"
-      />
-
-
-      <div v-if="fileError" class="text-red-500 mb-4">{{ fileError }}</div>
-      <PDFViewer v-if="isPDF" :pdfUrl="pdfUrl" />
+      <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
       <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
       <p v-else class="text-gray-500">No content loaded</p>
     </div>
@@ -77,13 +61,81 @@
         </button>
       </div>
     </div>
+
+        <!-- Modal -->
+        <TransitionRoot appear :show="isOpen" as="template">
+      <Dialog as="div" @close="closeModal" class="relative z-10">
+        <TransitionChild
+          as="template"
+          enter="duration-300 ease-out"
+          enter-from="opacity-0"
+          enter-to="opacity-100"
+          leave="duration-200 ease-in"
+          leave-from="opacity-100"
+          leave-to="opacity-0"
+        >
+          <div class="fixed inset-0 bg-black bg-opacity-25" />
+        </TransitionChild>
+
+        <div class="fixed inset-0 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4 text-center">
+            <TransitionChild
+              as="template"
+              enter="duration-300 ease-out"
+              enter-from="opacity-0 scale-95"
+              enter-to="opacity-100 scale-100"
+              leave="duration-200 ease-in"
+              leave-from="opacity-100 scale-100"
+              leave-to="opacity-0 scale-95"
+            >
+              <DialogPanel class="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                <DialogTitle as="h3" class="text-lg font-medium leading-6 text-gray-900">
+                  Add Website or Document
+                </DialogTitle>
+                <div class="mt-2">
+
+                  <!-- External URI upload -->
+                  <input 
+                    v-model="url"
+                    @keyup.enter="loadContent"
+                    class="w-full p-2 border rounded mb-2"
+                    placeholder="Enter PDF or website URL"
+                  />
+
+                  <!-- File input in the modal -->
+                  <input 
+                    type="file" 
+                    @change="handleFileUpload" 
+                    accept="application/pdf"
+                    class="mb-2"
+                  />
+                  <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
+                </div>
+
+                <div class="mt-4">
+                  <button
+                    type="button"
+                    class="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    @click="loadContent"
+                  >
+                    Load Content
+                  </button>
+                </div>
+              </DialogPanel>
+            </TransitionChild>
+          </div>
+        </div>
+      </Dialog>
+    </TransitionRoot>
+
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue';
-import PDFViewer from './PDFViewer.vue';
-import WebsiteViewer from './WebsiteViewer.vue';
+import { defineComponent, ref, Ref } from 'vue';
+import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue';
+import PDFViewer from './Viewers/PDFViewer.vue';
+import WebsiteViewer from './Viewers/WebsiteViewer.vue';
 
 interface ChatMessage {
   sender: string;
@@ -94,11 +146,15 @@ export default defineComponent({
   name: 'MainLayout',
   components: {
     PDFViewer,
-    WebsiteViewer
+    WebsiteViewer,
+    Dialog,
+    DialogPanel,
+    DialogTitle,
+    TransitionChild,
+    TransitionRoot,
   },
   setup() {
     const url = ref('');
-    const pdfUrl = ref<string | null>(null);
     const contentUrl = ref<string | null>(null);
 
     const isPDF = ref(false);
@@ -109,47 +165,130 @@ export default defineComponent({
     const explanation = ref<string | null>(null);
     const chatInput = ref('');
     const chatMessages = ref<ChatMessage[]>([]);
-    const fileError = ref<string | null>(null);
+    const error = ref<string | null>(null);
+    const isOpen = ref(false);
+
+    const fileType = ref<string | null>(null);
+    const fileContent = ref<string | null>(null);
+
+
+    const openModal = () => {
+      isOpen.value = true;
+    };
+
+    const closeModal = () => {
+      isOpen.value = false;
+      error.value = null;
+      url.value = '';
+    };
 
     const loadContent = () => {
       console.log("Loading content:", url.value);
+      error.value = null;
       if (url.value) {
-        contentUrl.value = url.value;
-        isPDF.value = url.value.toLowerCase().endsWith('.pdf');
-        isWebsite.value = !isPDF.value;
-        fileError.value = null;
+        try {
+          contentUrl.value = url.value;
+          isPDF.value = url.value.toLowerCase().endsWith('.pdf');
+          isWebsite.value = !isPDF.value;
+        } catch (e) {
+          error.value = 'Invalid URL. Please enter a valid URL.';
+        }
+      } else {
+        error.value = 'Please enter a URL';
       }
+    };
+
+    const resetFileTypes = (currentRef: Ref<boolean> | null) => {
+      const fileTypes: Ref<boolean>[] = [isPDF, isWebsite];
+      
+      fileTypes.forEach(refObj => {
+        refObj.value = (refObj === currentRef);
+      });
     };
 
     const handleFileUpload = (event: Event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (file) {
-        if (file.type !== 'application/pdf') {
-          fileError.value = 'Please upload a PDF file.';
-          pdfUrl.value = null;
-          isPDF.value = false;
-          isWebsite.value = false;
-        } else {
-          try {
-            pdfUrl.value = URL.createObjectURL(file);
-            fileError.value = null;
-            isPDF.value = true;
-            isWebsite.value = false;
-            console.log('Created Blob URL:', pdfUrl.value);
-          } catch (error) {
-            console.error('Error creating Blob URL:', error);
-            fileError.value = 'Error loading the file. Please try again.';
-            pdfUrl.value = null;
-            isPDF.value = false;
-            isWebsite.value = false;
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        fileType.value = extension || null;
+
+        try {
+          if (file.type == 'application/pdf') {
+            contentUrl.value = URL.createObjectURL(file);
+            resetFileTypes(isPDF);
+          } else {
+            switch(extension) {
+              case 'pdf':
+                contentUrl.value = URL.createObjectURL(file);
+                resetFileTypes(isPDF);
+                break;
+              case 'txt':
+              case 'md':
+              case 'json':
+              case 'xml':
+              case 'docx':
+                // Use mammoth.js to extract text
+                // const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+                // fileContent.value = result.value;
+                break;
+              case 'epub':
+                // Use epub.js to extract text
+                // const book = ePub(file);
+                // const spine = await book.loaded.spine;
+                // fileContent.value = await spine.items.reduce(async (contentPromise, item) => {
+                //   const content = await contentPromise;
+                //   const itemContent = await item.load(book.load.bind(book));
+                //   return content + itemContent;
+                // }, Promise.resolve(''));
+                break;
+              case 'csv':
+              case 'xlsx':
+                // Use xlsx library to parse spreadsheet
+                // const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+                // fileContent.value = workbook.SheetNames.map(sheetName => {
+                //   const sheet = workbook.Sheets[sheetName];
+                //   return XLSX.utils.sheet_to_csv(sheet);
+                // }).join('\n\n');
+                break;
+                // ... handle other file types ...
+              default:
+                resetFileTypes(null);
+                throw new Error('Unsupported file type');
+            }
           }
+          error.value = null;
+          closeModal();
+        } catch (e) {
+          error.value = `Error loading the file: ${e instanceof Error ? e.message : String(e)}`;
         }
-      } else {
-        fileError.value = 'No file selected.';
-        pdfUrl.value = null;
-        isPDF.value = false;
-        isWebsite.value = false;
+      } else { 
+        error.value = 'No file selected.';
       }
+
+        // REMOVE BELOW
+
+      //   if (file.type !== 'application/pdf') {
+      //     isPDF.value = false;
+      //     isWebsite.value = false;
+      //   } else {
+
+      //     try {
+      //       isPDF.value = true;
+      //       isWebsite.value = false;
+      //       error.value = null;
+      //       closeModal();
+      //     } catch (error) {
+      //       console.error('Error creating Blob URL:', error);
+      //       error.value = 'Error loading the file. Please try again.';
+      //       isPDF.value = false;
+      //       isWebsite.value = false;
+      //     }
+      //   }
+      // } else {
+      //   error.value = 'No file selected.';
+      //   isPDF.value = false;
+      //   isWebsite.value = false;
+      // }
 
     };
 
@@ -173,13 +312,15 @@ export default defineComponent({
     };
 
     return {
-      pdfUrl,
       url,
+      error,
+      isOpen,
+      openModal,
+      closeModal,
       summary,
       contentUrl,
       loadContent,
       isPDF,
-      fileError,
       isWebsite,
       highlightText,
       explanation,
@@ -189,6 +330,7 @@ export default defineComponent({
       summarize,
       highlightAndExplain,
       sendChatMessage,
+      resetFileTypes,
     };
   },
 });
