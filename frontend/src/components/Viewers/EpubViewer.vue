@@ -96,7 +96,7 @@ export default defineComponent({
           book.value = ePub(props.epubUrl, { openAs: 'epub' })
 
           const viewportWidth = document.getElementById('epub-viewer-container')?.clientWidth || 800
-          const viewportHeight = 600
+          const viewportHeight = 700
           rendition.value = book.value.renderTo('epub-viewer-container', {
             width: viewportWidth,
             height: viewportHeight,
@@ -209,13 +209,8 @@ export default defineComponent({
 
 .epub-container {
   width: 100%;
-  height: 600px;
+  height: 700px;
   margin-bottom: 1rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06);
   overflow: hidden;
 }
 
