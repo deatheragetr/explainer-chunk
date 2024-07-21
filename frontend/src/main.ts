@@ -8,7 +8,6 @@ import router from './router'
 import './index.css' // This file will include Tailwind
 import 'pdfjs-dist/web/pdf_viewer.css';
 
-
 const app = createApp(App)
 
 app.use(createPinia())
