@@ -21,6 +21,7 @@
     "pdfjs-dist": "^4.4.168",
     "pinia": "^2.1.7",
     "vue": "^3.4.29",
+    "vue-pdf-embed": "^2.0.4",
     "vue-router": "^4.3.3"
   },
   "devDependencies": {
