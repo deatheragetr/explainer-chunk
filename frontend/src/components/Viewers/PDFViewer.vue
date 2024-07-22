@@ -2,7 +2,10 @@
   <div class="pdf-viewer">
     <div v-if="loading" class="loading">Loading PDF...</div>
     <div class="pdf-container" ref="pdfContainer" @scroll="handleScroll">
-      <div class="pdf-content">
+      <div
+        class="pdf-content"
+        :style="{ transform: `scale(${scale})`, transformOrigin: 'center top' }"
+      >
         <div v-for="page in renderedPages" :key="page" class="page-container">
           <canvas
             :ref="
@@ -23,9 +26,79 @@
       </div>
     </div>
     <div class="controls">
-      <button @click="prevPage" :disabled="currentPage === 1">Previous</button>
-      <span>Page {{ currentPage }} of {{ totalPages }}</span>
-      <button @click="nextPage" :disabled="currentPage === totalPages">Next</button>
+      <div class="control-group">
+        <button
+          @click="prevPage"
+          :disabled="currentPage === 1"
+          class="icon-button"
+          aria-label="Previous page"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="icon"
+          >
+            <polyline points="18 15 12 9 6 15"></polyline>
+          </svg>
+        </button>
+        <span class="page-info">Page {{ currentPage }} of {{ totalPages }}</span>
+        <button
+          @click="nextPage"
+          :disabled="currentPage === totalPages"
+          class="icon-button"
+          aria-label="Next page"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="icon"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div class="control-group">
+        <button @click="zoomOut" :disabled="scale <= 0.5" class="icon-button" aria-label="Zoom out">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="icon"
+          >
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <span class="zoom-info">{{ Math.round(scale * 100) }}%</span>
+        <button @click="zoomIn" :disabled="scale >= 3" class="icon-button" aria-label="Zoom in">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="icon"
+          >
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -55,7 +128,8 @@ export default defineComponent({
     const totalPages = ref(0)
     const renderedPages = ref<number[]>([])
     let pdfDoc: any = null
-    const scale = ref(1.5)
+    const scale = ref(1)
+    const baseScale = ref(1.5)
     const renderingQueue = reactive<{ [key: number]: boolean }>({})
     let cancelRendering = false
     let scrollTimeout: number | null = null
@@ -68,7 +142,8 @@ export default defineComponent({
 
       try {
         const page = await pdfDoc.getPage(pageNum)
-        const viewport = page.getViewport({ scale: scale.value })
+        // const viewport = page.getViewport({ scale: scale.value })
+        const viewport = page.getViewport({ scale: baseScale.value })
 
         const canvas = canvasRefs[pageNum]
         const textLayerDiv = textLayerRefs[pageNum]
@@ -248,6 +323,29 @@ export default defineComponent({
       }
     }
 
+    const zoomIn = () => {
+      if (scale.value < 3) {
+        scale.value += 0.25
+        adjustScrollAfterZoom()
+      }
+    }
+
+    const zoomOut = () => {
+      if (scale.value > 0.5) {
+        scale.value -= 0.25
+        adjustScrollAfterZoom()
+      }
+    }
+
+    const adjustScrollAfterZoom = () => {
+      if (!pdfContainer.value) return
+      const container = pdfContainer.value
+      const scrollXCenter = container.scrollLeft + container.clientWidth / 2
+      const scrollYCenter = container.scrollTop + container.clientHeight / 2
+      container.scrollLeft = scrollXCenter * scale.value - container.clientWidth / 2
+      container.scrollTop = scrollYCenter * scale.value - container.clientHeight / 2
+    }
+
     onMounted(() => {
       loadPDF()
     })
@@ -269,7 +367,10 @@ export default defineComponent({
       renderedPages,
       prevPage,
       nextPage,
-      handleScroll
+      handleScroll,
+      scale,
+      zoomIn,
+      zoomOut
     }
   }
 })
@@ -285,22 +386,44 @@ export default defineComponent({
 }
 
 .pdf-container {
+  /* position: relative; */
+  /* width: 100%; */
+  /* height: calc(100% - 50px); Adjust based on your controls height */
+  /* overflow-y: auto; */
+  /* display: flex; */
+  /* justify-content: center; */
+
+  /* position: relative;
+  width: 100%;
+  height: calc(100% - 50px);
+  overflow: auto; */
+
   position: relative;
   width: 100%;
-  height: calc(100% - 50px); /* Adjust based on your controls height */
-  overflow-y: auto;
+  height: calc(100% - 60px); /* Adjusted to accommodate taller controls */
+  overflow: auto;
   display: flex;
   justify-content: center;
 }
 
 .pdf-content {
-  display: flex;
+  /* display: flex; */
+  display: inline-block; /* Changed from flex to inline-block */
+  /* min-width: 100%;
+  min-height: 100%; */
+
+  /* 
   flex-direction: column;
-  align-items: center;
+  align-items: center; */
+
+  display: inline-block;
+  text-align: center;
 }
 
 .page-container {
-  position: relative;
+  /* position: relative;
+  margin-bottom: 10px; */
+  display: inline-block;
   margin-bottom: 10px;
 }
 
@@ -336,10 +459,10 @@ export default defineComponent({
 }
 
 .controls {
-  margin-top: 1rem;
   display: flex;
-  gap: 1rem;
+  justify-content: center;
   align-items: center;
+  gap: 20px;
   position: fixed;
   bottom: 20px;
   left: 50%;
@@ -348,6 +471,18 @@ export default defineComponent({
   padding: 10px;
   border-radius: 5px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-info,
+.zoom-info {
+  min-width: 100px;
+  text-align: center;
 }
 
 canvas {
@@ -362,5 +497,45 @@ canvas {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+.controls button {
+  padding: 5px 10px;
+  margin: 0 5px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.controls button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.icon-button {
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #007bff;
+  transition: color 0.3s ease;
+}
+
+.icon-button:hover:not(:disabled) {
+  color: #0056b3;
+}
+
+.icon-button:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
 }
 </style>
