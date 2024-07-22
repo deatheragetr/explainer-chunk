@@ -14,6 +14,7 @@
       <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
       <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
       <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
+      <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
       <p v-else class="text-gray-500">No content loaded</p>
     </div>
 
@@ -117,7 +118,7 @@
                   <input
                     type="file"
                     @change="handleFileUpload"
-                    accept="application/pdf, application/epub+zip"
+                    accept="application/pdf, application/epub+zip, application/json"
                     class="mb-2"
                   />
                   <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
@@ -147,6 +148,7 @@ import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } fro
 import PDFViewer from './Viewers/PDFViewer.vue'
 import WebsiteViewer from './Viewers/WebsiteViewer.vue'
 import EpubViewer from './Viewers/EpubViewer.vue'
+import JSONViewer from './Viewers/JSONViewer.vue'
 
 interface ChatMessage {
   sender: string
@@ -159,6 +161,7 @@ export default defineComponent({
     PDFViewer,
     WebsiteViewer,
     EpubViewer,
+    JSONViewer,
     Dialog,
     DialogPanel,
     DialogTitle,
@@ -170,6 +173,7 @@ export default defineComponent({
     const contentUrl = ref<string | null>(null)
 
     const isPDF = ref(false)
+    const isJSON = ref(false)
     const isWebsite = ref(false)
     const isEpub = ref(false)
 
@@ -199,9 +203,11 @@ export default defineComponent({
       error.value = null
       if (url.value) {
         try {
+          // TODO: Import into correct doc type e.g., http://example.org/foo.pdf?
+          resetFileTypes(null)
           contentUrl.value = url.value
-          isPDF.value = url.value.toLowerCase().endsWith('.pdf')
-          isWebsite.value = !isPDF.value
+          isWebsite.value = true
+          closeModal()
         } catch (e) {
           error.value = 'Invalid URL. Please enter a valid URL.'
         }
@@ -211,7 +217,7 @@ export default defineComponent({
     }
 
     const resetFileTypes = (currentRef: Ref<boolean> | null) => {
-      const fileTypes: Ref<boolean>[] = [isPDF, isWebsite, isEpub]
+      const fileTypes: Ref<boolean>[] = [isPDF, isWebsite, isEpub, isJSON]
 
       fileTypes.forEach((refObj) => {
         refObj.value = refObj === currentRef
@@ -228,12 +234,21 @@ export default defineComponent({
         console.log('And extension: ', fileType.value)
 
         try {
-          if (file.type == 'application/pdf') {
-            contentUrl.value = URL.createObjectURL(file)
-            resetFileTypes(isPDF)
-          } else if (file.type == 'application/epub+zip') {
-            contentUrl.value = URL.createObjectURL(file)
-            resetFileTypes(isEpub)
+          if (file.type) {
+            switch (file.type) {
+              case 'application/pdf':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isPDF)
+                break
+              case 'application/epub+zip':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isEpub)
+                break
+              case 'application/json':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isJSON)
+                break
+            }
           } else {
             switch (extension) {
               case 'pdf':
@@ -243,6 +258,9 @@ export default defineComponent({
               case 'txt':
               case 'md':
               case 'json':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isJSON)
+                break
               case 'xml':
               case 'docx':
                 // Use mammoth.js to extract text
@@ -250,14 +268,8 @@ export default defineComponent({
                 // fileContent.value = result.value;
                 break
               case 'epub':
-                // Use epub.js to extract text
-                // const book = ePub(file);
-                // const spine = await book.loaded.spine;
-                // fileContent.value = await spine.items.reduce(async (contentPromise, item) => {
-                //   const content = await contentPromise;
-                //   const itemContent = await item.load(book.load.bind(book));
-                //   return content + itemContent;
-                // }, Promise.resolve(''));
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isEpub)
                 break
               case 'csv':
               case 'xlsx':
@@ -314,6 +326,7 @@ export default defineComponent({
       loadContent,
       isPDF,
       isEpub,
+      isJSON,
       isWebsite,
       highlightText,
       explanation,
