@@ -1,29 +1,37 @@
 <template>
-  <div class="flex h-screen bg-gray-100">
+  <div class="flex h-screen bg-gray-100 relative">
     <!-- Left Panel: Document Viewer -->
-    <div class="w-1/2 p-4 bg-white shadow-lg overflow-auto">
-      <h2 class="text-2xl font-bold mb-4">Document Viewer</h2>
+    <div :style="{ width: leftPanelWidth + 'px' }" class="bg-white shadow-lg overflow-auto">
+      <div class="p-4">
+        <h2 class="text-2xl font-bold mb-4">Document Viewer</h2>
 
-      <button
-        @click="openModal"
-        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
-      >
-        Add Website or Document
-      </button>
+        <button
+          @click="openModal"
+          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
+        >
+          Add Website or Document
+        </button>
 
-      <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
-      <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
-      <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
-      <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
-      <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
-      <DocxViewer v-else-if="isDocx" :docxUrl="contentUrl" />
-      <SpreadsheetViewer v-else-if="isSpreadsheet" :spreadsheetUrl="contentUrl" />
+        <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
+        <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
+        <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
+        <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
+        <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
+        <DocxViewer v-else-if="isDocx" :docxUrl="contentUrl" />
+        <SpreadsheetViewer v-else-if="isSpreadsheet" :spreadsheetUrl="contentUrl" />
 
-      <p v-else class="text-gray-500">No content loaded</p>
+        <p v-else class="text-gray-500">No content loaded</p>
+      </div>
     </div>
 
+    <!-- Draggable Divider -->
+    <div
+      class="w-1 bg-gray-300 cursor-col-resize hover:bg-gray-400 active:bg-gray-500"
+      @mousedown="startDragging"
+    ></div>
+
     <!-- Right Panel: Tools -->
-    <div class="w-1/2 p-4 space-y-4 overflow-auto">
+    <div :style="{ width: rightPanelWidth + 'px' }" class="p-4 space-y-4 overflow-auto">
       <!-- Summarize Section -->
       <div class="bg-white p-4 shadow rounded-lg">
         <h3 class="text-xl font-semibold mb-2">Summarize</h3>
@@ -147,7 +155,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, Ref } from 'vue'
+import { defineComponent, ref, Ref, onMounted, onUnmounted } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import PDFViewer from './Viewers/PDFViewer.vue'
 import WebsiteViewer from './Viewers/WebsiteViewer.vue'
@@ -198,8 +206,50 @@ export default defineComponent({
     const error = ref<string | null>(null)
     const isOpen = ref(false)
 
-    const fileType = ref<string | null>(null)
-    const fileContent = ref<string | null>(null)
+    // Used for reactive dragging.
+    const leftPanelWidth = ref(window.innerWidth / 2)
+    const rightPanelWidth = ref(window.innerWidth / 2)
+    const isDragging = ref(false)
+
+    const startDragging = (e: MouseEvent) => {
+      isDragging.value = true
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', stopDragging)
+    }
+
+    const stopDragging = () => {
+      isDragging.value = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', stopDragging)
+    }
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (isDragging.value) {
+        const newLeftWidth = e.clientX
+        const newRightWidth = window.innerWidth - e.clientX
+
+        // Ensure minimum width for both panels
+        if (newLeftWidth > 200 && newRightWidth > 200) {
+          leftPanelWidth.value = newLeftWidth
+          rightPanelWidth.value = newRightWidth
+        }
+      }
+    }
+
+    onMounted(() => {
+      window.addEventListener('resize', updatePanelWidths)
+    })
+
+    onUnmounted(() => {
+      window.removeEventListener('resize', updatePanelWidths)
+    })
+
+    const updatePanelWidths = () => {
+      const totalWidth = window.innerWidth
+      const leftRatio = leftPanelWidth.value / (leftPanelWidth.value + rightPanelWidth.value)
+      leftPanelWidth.value = totalWidth * leftRatio
+      rightPanelWidth.value = totalWidth - leftPanelWidth.value
+    }
 
     const openModal = () => {
       isOpen.value = true
@@ -375,8 +425,17 @@ export default defineComponent({
       summarize,
       highlightAndExplain,
       sendChatMessage,
-      resetFileTypes
+      resetFileTypes,
+      leftPanelWidth,
+      rightPanelWidth,
+      startDragging
     }
   }
 })
 </script>
+<style>
+/* Disable text selection while dragging */
+.user-select-none {
+  user-select: none;
+}
+</style>
