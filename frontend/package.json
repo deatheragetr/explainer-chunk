@@ -19,12 +19,14 @@
     "@headlessui/vue": "^1.7.22",
     "dompurify": "^3.1.6",
     "epubjs": "^0.3.93",
+    "mammoth": "^1.8.0",
     "marked": "^13.0.2",
     "pdfjs-dist": "^4.4.168",
     "pinia": "^2.1.7",
     "vue": "^3.4.29",
     "vue-pdf-embed": "^2.0.4",
-    "vue-router": "^4.3.3"
+    "vue-router": "^4.3.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.8.0",
@@ -33,6 +35,7 @@
     "@types/jsdom": "^21.1.7",
     "@types/marked": "^6.0.0",
     "@types/node": "^20.14.5",
+    "@types/xlsx": "^0.0.36",
     "@vitejs/plugin-vue": "^5.0.5",
     "@vitejs/plugin-vue-jsx": "^4.0.0",
     "@vue/eslint-config-prettier": "^9.0.0",

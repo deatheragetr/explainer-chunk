@@ -16,6 +16,9 @@
       <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
       <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
       <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
+      <DocxViewer v-else-if="isDocx" :docxUrl="contentUrl" />
+      <SpreadsheetViewer v-else-if="isSpreadsheet" :spreadsheetUrl="contentUrl" />
+
       <p v-else class="text-gray-500">No content loaded</p>
     </div>
 
@@ -119,7 +122,7 @@
                   <input
                     type="file"
                     @change="handleFileUpload"
-                    accept="application/pdf, application/epub+zip, application/json, text/markdown, text/plain, .md, .markdown, .txt, .json, .pdf"
+                    accept="application/pdf, application/epub+zip, application/json, text/markdown, text/plain, .md, .markdown, .txt, .json, .pdf, .docx, .csv, .xlsx"
                     class="mb-2"
                   />
                   <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
@@ -151,6 +154,8 @@ import WebsiteViewer from './Viewers/WebsiteViewer.vue'
 import EpubViewer from './Viewers/EpubViewer.vue'
 import JSONViewer from './Viewers/JSONViewer.vue'
 import MarkdownViewer from './Viewers/MarkdownViewer.vue'
+import DocxViewer from './Viewers/DocxViewer.vue'
+import SpreadsheetViewer from './Viewers/SpreadsheetViewer.vue'
 
 interface ChatMessage {
   sender: string
@@ -164,6 +169,8 @@ export default defineComponent({
     WebsiteViewer,
     EpubViewer,
     JSONViewer,
+    DocxViewer,
+    SpreadsheetViewer,
     Dialog,
     DialogPanel,
     DialogTitle,
@@ -180,6 +187,8 @@ export default defineComponent({
     const isWebsite = ref(false)
     const isEpub = ref(false)
     const isMarkdown = ref(false)
+    const isDocx = ref(false)
+    const isSpreadsheet = ref(false)
 
     const summary = ref<string | null>(null)
     const highlightText = ref('')
@@ -221,7 +230,15 @@ export default defineComponent({
     }
 
     const resetFileTypes = (currentRef: Ref<boolean> | null) => {
-      const fileTypes: Ref<boolean>[] = [isPDF, isWebsite, isEpub, isJSON, isMarkdown]
+      const fileTypes: Ref<boolean>[] = [
+        isPDF,
+        isWebsite,
+        isEpub,
+        isJSON,
+        isMarkdown,
+        isDocx,
+        isSpreadsheet
+      ]
 
       fileTypes.forEach((refObj) => {
         refObj.value = refObj === currentRef
@@ -253,6 +270,15 @@ export default defineComponent({
                 contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isMarkdown)
                 break
+              case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isDocx)
+                break
+              case 'text/csv':
+              case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isSpreadsheet)
+                break
               default:
                 fileSupported = false
             }
@@ -270,29 +296,25 @@ export default defineComponent({
                 resetFileTypes(isJSON)
                 break
               case 'xml':
-              case 'docx':
-                // Use mammoth.js to extract text
-                // const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-                // fileContent.value = result.value;
-                break
               case 'epub':
                 contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isEpub)
                 break
               case 'csv':
               case 'xlsx':
-                // Use xlsx library to parse spreadsheet
-                // const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-                // fileContent.value = workbook.SheetNames.map(sheetName => {
-                //   const sheet = workbook.Sheets[sheetName];
-                //   return XLSX.utils.sheet_to_csv(sheet);
-                // }).join('\n\n');
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isSpreadsheet)
                 break
+
               case 'md':
               case 'markdown':
               case 'txt': // Explicitly handle .txt files as Markdown
                 contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isMarkdown)
+                break
+              case 'docx':
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isDocx)
                 break
               // ... handle other file types ...
               default:
@@ -342,7 +364,9 @@ export default defineComponent({
       isEpub,
       isJSON,
       isMarkdown,
+      isDocx,
       isWebsite,
+      isSpreadsheet,
       highlightText,
       explanation,
       chatInput,
