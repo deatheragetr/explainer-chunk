@@ -1,5 +1,5 @@
 <template>
-  <div class="epub-viewer">
+  <div class="epub-viewer" ref="epubContainer">
     <div class="viewer-header mb-4">
       <h2 class="text-2xl font-bold">{{ bookTitle }}</h2>
       <p class="text-gray-600">{{ currentChapter }}</p>
@@ -47,8 +47,20 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, onMounted, ref, watch, onBeforeUnmount } from 'vue'
+import { defineComponent, onMounted, ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import ePub from 'epubjs'
+
+const debounce = (fn: Function, delay: number) => {
+  let timeoutId: NodeJS.Timeout | null = null
+  return (...args: any[]) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+    timeoutId = setTimeout(() => {
+      fn(...args)
+    }, delay)
+  }
+}
 
 export default defineComponent({
   name: 'EpubViewer',
@@ -66,6 +78,10 @@ export default defineComponent({
     const progress = ref(0)
     const currentPage = ref(1)
     const totalPages = ref(0)
+    const epubContainer = ref<HTMLElement | null>(null)
+    const isRenditionReady = ref(false)
+    const currentWidth = ref(0)
+    const currentHeight = ref(0)
 
     const clearViewer = () => {
       if (rendition.value) {
@@ -78,12 +94,23 @@ export default defineComponent({
       if (container) {
         container.innerHTML = ''
       }
+      isRenditionReady.value = false
     }
 
     const calculateTotalPages = () => {
       if (book.value && book.value.locations) {
         const totalCfi = book.value.locations.length()
-        totalPages.value = Math.ceil(totalCfi / 2) // Divide by 2 for two-page spread
+        totalPages.value = Math.ceil(totalCfi / 2)
+      }
+    }
+
+    const calculateViewportDimensions = () => {
+      if (epubContainer.value) {
+        const rect = epubContainer.value.getBoundingClientRect()
+        currentWidth.value = rect.width
+        // Subtracting estimated height for header, controls, and page info
+        currentHeight.value = window.innerHeight - 300 // Adjust this value as needed
+        // currentHeight.value = rect.height - 200
       }
     }
 
@@ -95,13 +122,14 @@ export default defineComponent({
         if (props.epubUrl) {
           book.value = ePub(props.epubUrl, { openAs: 'epub' })
 
-          const viewportWidth = document.getElementById('epub-viewer-container')?.clientWidth || 800
-          const viewportHeight = 700
+          await nextTick() // Wait for the DOM to update
+          calculateViewportDimensions()
+
           rendition.value = book.value.renderTo('epub-viewer-container', {
-            width: viewportWidth,
-            height: viewportHeight,
+            width: currentWidth.value,
+            height: currentHeight.value,
             spread: 'always',
-            minSpreadWidth: 0 // Force two-page spread regardless of width
+            minSpreadWidth: 0
           })
 
           book.value.loaded.metadata.then((metadata) => {
@@ -114,9 +142,12 @@ export default defineComponent({
             }
           })
 
+          rendition.value.on('rendered', () => {
+            isRenditionReady.value = true
+          })
+
           rendition.value.on('relocated', (location: any) => {
             progress.value = Math.round((location.start.percentage || 0) * 100)
-            console.log(location.start)
             currentPage.value = Math.ceil(
               book.value!.locations.percentageFromCfi(location.start.cfi) * totalPages.value
             )
@@ -129,7 +160,6 @@ export default defineComponent({
             }
           })
 
-          console.log('Displaying epub...', rendition.value)
           await rendition.value.display()
 
           book.value.ready.then(() => {
@@ -138,6 +168,11 @@ export default defineComponent({
               console.log('Locations generated')
             })
           })
+
+          const resizeObserver = new ResizeObserver(debouncedResizeViewer)
+          if (epubContainer.value) {
+            resizeObserver.observe(epubContainer.value)
+          }
 
           console.log('EPUB loaded successfully')
         }
@@ -155,7 +190,6 @@ export default defineComponent({
     }
 
     const handleProgressChange = () => {
-      //   if (book.value && rendition.value && locationsReady.value) {
       if (book.value && rendition.value) {
         const location = book.value.locations.cfiFromPercentage(progress.value / 100)
         if (location) {
@@ -166,20 +200,28 @@ export default defineComponent({
       }
     }
 
+    const resizeViewer = () => {
+      if (isRenditionReady.value && rendition.value && epubContainer.value) {
+        calculateViewportDimensions()
+
+        console.log(`Resizing to ${currentWidth.value}x${currentHeight.value}`)
+        rendition.value.resize(currentWidth.value, currentHeight.value)
+      }
+    }
+
+    const debouncedResizeViewer = debounce(resizeViewer, 200)
+
     onMounted(() => {
       loadEpub()
+      window.addEventListener('resize', debouncedResizeViewer)
+
+      onBeforeUnmount(() => {
+        window.removeEventListener('resize', debouncedResizeViewer)
+        clearViewer()
+      })
     })
 
-    watch(
-      () => props.epubUrl,
-      () => {
-        loadEpub()
-      }
-    )
-
-    onBeforeUnmount(() => {
-      clearViewer()
-    })
+    watch(() => props.epubUrl, loadEpub)
 
     return {
       bookTitle,
@@ -189,7 +231,8 @@ export default defineComponent({
       nextPage,
       currentPage,
       totalPages,
-      handleProgressChange
+      handleProgressChange,
+      epubContainer
     }
   }
 })
@@ -208,9 +251,7 @@ export default defineComponent({
 }
 
 .epub-container {
-  width: 100%;
-  height: 700px;
-  margin-bottom: 1rem;
+  flex-grow: 1;
   overflow: hidden;
 }
 
@@ -218,6 +259,7 @@ export default defineComponent({
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-top: 1rem;
 }
 
 .control-btn {
@@ -268,5 +310,6 @@ input[type='range']::-moz-range-thumb {
 .page-info {
   font-size: 0.875rem;
   color: #4a5568;
+  margin-top: 0.5rem;
 }
 </style>
