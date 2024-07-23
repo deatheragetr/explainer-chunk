@@ -15,6 +15,7 @@
       <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
       <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
       <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
+      <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
       <p v-else class="text-gray-500">No content loaded</p>
     </div>
 
@@ -118,7 +119,7 @@
                   <input
                     type="file"
                     @change="handleFileUpload"
-                    accept="application/pdf, application/epub+zip, application/json"
+                    accept="application/pdf, application/epub+zip, application/json, text/markdown, text/plain, .md, .markdown, .txt, .json, .pdf"
                     class="mb-2"
                   />
                   <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
@@ -149,6 +150,7 @@ import PDFViewer from './Viewers/PDFViewer.vue'
 import WebsiteViewer from './Viewers/WebsiteViewer.vue'
 import EpubViewer from './Viewers/EpubViewer.vue'
 import JSONViewer from './Viewers/JSONViewer.vue'
+import MarkdownViewer from './Viewers/MarkdownViewer.vue'
 
 interface ChatMessage {
   sender: string
@@ -166,7 +168,8 @@ export default defineComponent({
     DialogPanel,
     DialogTitle,
     TransitionChild,
-    TransitionRoot
+    TransitionRoot,
+    MarkdownViewer
   },
   setup() {
     const url = ref('')
@@ -176,6 +179,7 @@ export default defineComponent({
     const isJSON = ref(false)
     const isWebsite = ref(false)
     const isEpub = ref(false)
+    const isMarkdown = ref(false)
 
     const summary = ref<string | null>(null)
     const highlightText = ref('')
@@ -217,7 +221,7 @@ export default defineComponent({
     }
 
     const resetFileTypes = (currentRef: Ref<boolean> | null) => {
-      const fileTypes: Ref<boolean>[] = [isPDF, isWebsite, isEpub, isJSON]
+      const fileTypes: Ref<boolean>[] = [isPDF, isWebsite, isEpub, isJSON, isMarkdown]
 
       fileTypes.forEach((refObj) => {
         refObj.value = refObj === currentRef
@@ -227,14 +231,10 @@ export default defineComponent({
     const handleFileUpload = (event: Event) => {
       const file = (event.target as HTMLInputElement).files?.[0]
       if (file) {
-        const extension = file.name.split('.').pop()?.toLowerCase()
-        fileType.value = extension || null
-
-        console.log('Uploading file of type: ', file.type)
-        console.log('And extension: ', fileType.value)
-
         try {
+          let fileSupported: Boolean = false
           if (file.type) {
+            fileSupported = true
             switch (file.type) {
               case 'application/pdf':
                 contentUrl.value = URL.createObjectURL(file)
@@ -248,15 +248,23 @@ export default defineComponent({
                 contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isJSON)
                 break
+              case 'text/markdown':
+              case 'text/plain': // This will catch .txt files
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isMarkdown)
+                break
+              default:
+                fileSupported = false
             }
-          } else {
+          }
+          // If MIME TYPE unsupported or not defined, fallback to using the file extension
+          if (!fileSupported) {
+            const extension = file.name.split('.').pop()?.toLowerCase()
             switch (extension) {
               case 'pdf':
                 contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isPDF)
                 break
-              case 'txt':
-              case 'md':
               case 'json':
                 contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isJSON)
@@ -279,6 +287,12 @@ export default defineComponent({
                 //   const sheet = workbook.Sheets[sheetName];
                 //   return XLSX.utils.sheet_to_csv(sheet);
                 // }).join('\n\n');
+                break
+              case 'md':
+              case 'markdown':
+              case 'txt': // Explicitly handle .txt files as Markdown
+                contentUrl.value = URL.createObjectURL(file)
+                resetFileTypes(isMarkdown)
                 break
               // ... handle other file types ...
               default:
@@ -327,6 +341,7 @@ export default defineComponent({
       isPDF,
       isEpub,
       isJSON,
+      isMarkdown,
       isWebsite,
       highlightText,
       explanation,
