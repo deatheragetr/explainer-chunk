@@ -1,36 +1,21 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from controllers import document_upload_controller, upload_controller
 
 app = FastAPI()
 
-class UrlInput(BaseModel):
-    url: str
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Update this with your Vue.js app's URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    # TODO: Implement file processing
-    return {"filename": file.filename}
-
-@app.post("/fetch-url")
-async def fetch_url(url_input: UrlInput):
-    # TODO: Implement URL fetching and processing
-    return {"url": url_input.url}
-
-@app.post("/summarize")
-async def summarize_document(document: str):
-    # TODO: Implement document summarization
-    return {"summary": "Document summary"}
-
-@app.post("/highlight")
-async def highlight_explain(document: str, highlight: str):
-    # TODO: Implement highlighting and explanation
-    return {"explanation": "Highlight explanation"}
-
-@app.post("/chat")
-async def chat_query(query: str):
-    # TODO: Implement chat/Q&A functionality
-    return {"response": "Chat response"}
+app.include_router(upload_controller.router)
+app.include_router(document_upload_controller.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
