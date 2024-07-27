@@ -157,6 +157,7 @@
 <script lang="ts">
 import { defineComponent, ref, Ref, onMounted, onUnmounted } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import axios from 'axios'
 import PDFViewer from './Viewers/PDFViewer.vue'
 import WebsiteViewer from './Viewers/WebsiteViewer.vue'
 import EpubViewer from './Viewers/EpubViewer.vue'
@@ -164,6 +165,7 @@ import JSONViewer from './Viewers/JSONViewer.vue'
 import MarkdownViewer from './Viewers/MarkdownViewer.vue'
 import DocxViewer from './Viewers/DocxViewer.vue'
 import SpreadsheetViewer from './Viewers/SpreadsheetViewer.vue'
+import { uploadLargeFile } from '@/utils/fileUpload'
 
 interface ChatMessage {
   sender: string
@@ -295,42 +297,40 @@ export default defineComponent({
       })
     }
 
-    const handleFileUpload = (event: Event) => {
+    const handleFileUpload = async (event: Event) => {
       const file = (event.target as HTMLInputElement).files?.[0]
       if (file) {
         try {
           let fileSupported: Boolean = false
+          let fileType = ''
           if (file.type) {
             fileSupported = true
             switch (file.type) {
               case 'application/pdf':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isPDF)
                 break
               case 'application/epub+zip':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isEpub)
                 break
               case 'application/json':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isJSON)
                 break
               case 'text/markdown':
               case 'text/plain': // This will catch .txt files
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isMarkdown)
                 break
               case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isDocx)
                 break
               case 'text/csv':
               case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isSpreadsheet)
                 break
               default:
                 fileSupported = false
+            }
+            if (fileSupported) {
+              fileType = file.type
             }
           }
           // If MIME TYPE unsupported or not defined, fallback to using the file extension
@@ -338,33 +338,35 @@ export default defineComponent({
             const extension = file.name.split('.').pop()?.toLowerCase()
             switch (extension) {
               case 'pdf':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isPDF)
+                fileType = 'application/pdf'
                 break
               case 'json':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isJSON)
+                fileType = 'application/json'
                 break
-              case 'xml':
+              // case 'xml':
               case 'epub':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isEpub)
+                fileType = 'application/epub+zip'
                 break
               case 'csv':
               case 'xlsx':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isSpreadsheet)
+                fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 break
-
               case 'md':
               case 'markdown':
-              case 'txt': // Explicitly handle .txt files as Markdown
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isMarkdown)
+                fileType = 'text/markdown'
+                break
+              case 'txt': // Explicitly handle .txt files as Markdown
+                resetFileTypes(isMarkdown)
+                fileType = 'text/plain'
                 break
               case 'docx':
-                contentUrl.value = URL.createObjectURL(file)
                 resetFileTypes(isDocx)
+                fileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 break
               // ... handle other file types ...
               default:
@@ -372,6 +374,40 @@ export default defineComponent({
                 throw new Error('Unsupported file type')
             }
           }
+
+          const { data: uploadData } = await uploadLargeFile(file, fileType)
+          console.log('UPLOAD DATA?: ', uploadData)
+
+          // const { data: uploadData } = await axios.post('http://localhost:8000/upload-url/', {
+          //   filename: file.name,
+          //   file_type: fileType
+          // })
+
+          // const maxRetries = 3
+          // for (let i = 0; i < maxRetries; i++) {
+          //   try {
+          //     await axios.put(uploadData.presigned_url, file, {
+          //       headers: {
+          //         'Content-Type': fileType
+          //       },
+          //       // Increase timeout for large files
+          //       timeout: 30000 // 30 seconds
+          //     })
+          //     break // Success, exit retry loop
+          //   } catch (uploadError) {
+          //     if (i === maxRetries - 1) throw uploadError // Rethrow on last attempt
+          //     console.log(`Upload attempt ${i + 1} failed, retrying...`)
+          //     await new Promise((resolve) => setTimeout(resolve, 1000)) // Wait 1 second before retrying
+          //   }
+          // }
+
+          // await axios.post('http://localhost:8000/document-uploads/', {
+          //   file_name: file.name,
+          //   file_type: fileType,
+          //   file_key: uploadData.file_key
+          // })
+
+          contentUrl.value = URL.createObjectURL(file)
           error.value = null
           closeModal()
         } catch (e) {
