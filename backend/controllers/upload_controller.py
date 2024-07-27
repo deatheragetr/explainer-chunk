@@ -1,23 +1,55 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 from bson import ObjectId
 from config.s3 import s3_client
 from config.environment import WasabiSettings
-from api.requests.upload import UploadFileInfoRequest
-from api.responses.upload import UploadFileInfoResponse
+from api.requests.upload import InitiateMultipartUploadRequest, GetUploadUrlRequest, CompleteMultipartUploadRequest
+from api.responses.upload import InitiateMultipartUploadResponse, GetUploadUrlResponse
+from typing import Annotated
+from botocore.exceptions import ClientError
+from api.utils.url_friendly import make_url_friendly
 
 settings = WasabiSettings()
-
 router = APIRouter()
 
-@router.post("/upload-url/", response_model=UploadFileInfoResponse)
-async def upload_url(file_info: UploadFileInfoRequest):
-    file_key = f"{ObjectId()}-{file_info.filename}"
+@router.post("/multipart-upload/", response_model=InitiateMultipartUploadResponse)
+async def initiate_multipart_upload(request: InitiateMultipartUploadRequest):
     try:
-        presigned_url = s3_client.generate_presigned_url('put_object',
-            Params={'Bucket': settings.wasabi_document_bucket, 'Key': file_key, 'ContentType': file_info.file_type},
-            ExpiresIn=3600,
-            HttpMethod='PUT'
+        url_friendly_file_name = make_url_friendly(request.file_name)
+        file_key = f"document_uploads/{ObjectId()}-{url_friendly_file_name}"
+        response = s3_client.create_multipart_upload(
+            Bucket=settings.wasabi_document_bucket,
+            Key=file_key,
+            ContentType=request.file_type
         )
-        return UploadFileInfoResponse(presigned_url=presigned_url, file_key=file_key)
-    except Exception as e:
+        return InitiateMultipartUploadResponse(upload_id=response['UploadId'], file_key=file_key)
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/upload-url/", response_model=GetUploadUrlResponse)
+async def get_upload_url(request: GetUploadUrlRequest):
+    try:
+        url = s3_client.generate_presigned_url(
+            'upload_part',
+            Params={
+                'Bucket': settings.wasabi_document_bucket,
+                'Key': request.file_key,
+                'UploadId': request.upload_id,
+                'PartNumber': request.part_number
+            },
+            ExpiresIn=3600
+        )
+        return GetUploadUrlResponse(presigned_url=url)
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/multipart-upload/{upload_id}")
+async def complete_multipart_upload(request: CompleteMultipartUploadRequest, upload_id: Annotated[str, Path(description='Upload ID of already initiated multipart upload')]):
+    try:
+        s3_client.complete_multipart_upload(
+            Bucket=settings.wasabi_document_bucket,
+            Key=request.file_key,
+            UploadId=upload_id,
+            MultipartUpload={'Parts': [part.model_dump() for part in request.parts]}
+        )
+    except ClientError as e:
         raise HTTPException(status_code=500, detail=str(e))

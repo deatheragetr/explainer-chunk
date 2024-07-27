@@ -1,5 +1,9 @@
 from pydantic import BaseModel
 
-class UploadFileInfoResponse(BaseModel):
-    presigned_url: str
+class InitiateMultipartUploadResponse(BaseModel):
+    upload_id: str
     file_key: str
+
+
+class GetUploadUrlResponse(BaseModel):
+    presigned_url: str
