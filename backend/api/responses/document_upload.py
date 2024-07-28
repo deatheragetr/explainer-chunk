@@ -6,3 +6,6 @@ class DocumentUploadResponse(BaseModel):
     file_name: Annotated[str, 'Original File Name']
     file_type: Annotated[str, 'MIME type of file, e.g, application/pdf']
     url_friendly_file_name: Annotated[str, 'URL friendly version of file_name (no spaces, non-ASCII chars, etc.)']
+
+class DocumentRetrieveResponse(DocumentUploadResponse):
+    presigned_url: Annotated[str, 'pre-signed URL to file in S3']

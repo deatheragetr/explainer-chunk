@@ -36,7 +36,7 @@ async def get_upload_url(request: GetUploadUrlRequest):
                 'UploadId': request.upload_id,
                 'PartNumber': request.part_number
             },
-            ExpiresIn=3600
+            ExpiresIn=3600 # In seconds (1 hour)
         )
         return GetUploadUrlResponse(presigned_url=url)
     except ClientError as e:
