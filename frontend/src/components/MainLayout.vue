@@ -430,7 +430,7 @@ export default defineComponent({
 
           const response: UploadResponse = await uploadLargeFile(file, fileType)
 
-          const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}`
+          const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}/read`
           router.push(newPath)
 
           contentUrl.value = URL.createObjectURL(file)
