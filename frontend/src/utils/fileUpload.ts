@@ -1,7 +1,7 @@
 import axios, { type AxiosResponse } from 'axios'
 import { parallelLimit } from './parallelLimit'
 
-const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
+const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks, minimum chunk size S3 allows
 const MAX_RETRIES = 3
 const RETRY_DELAY = 1000 // 1 second
 
@@ -20,7 +20,10 @@ interface PartUploadResult {
 }
 
 interface uploadLargeFileResponse {
-  data: object
+  id: string
+  file_name: string
+  file_type: string
+  url_friendly_file_name: string
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -132,5 +135,5 @@ export async function uploadLargeFile(
   })
 
   console.log('Upload completed successfully')
-  return results
+  return results.data
 }

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@headlessui/vue": "^1.7.22",
+    "axios": "^1.7.2",
     "dompurify": "^3.1.6",
     "epubjs": "^0.3.93",
     "mammoth": "^1.8.0",

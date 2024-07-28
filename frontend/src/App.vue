@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
-import MainLayout from './components/MainLayout.vue';
-
+// import { RouterLink, RouterView } from 'vue-router'
+// import HelloWorld from './components/HelloWorld.vue'
 </script>
 
 <template>
-      <!-- <HelloWorld msg="You did it!" /> -->
-      <MainLayout />
+  <!-- <HelloWorld msg="You did it!" /> -->
+  <!-- <MainLayout /> -->
 
-      <!-- <nav>
+  <!-- <nav>
         <RouterLink to="/">Home</RouterLink>
         <RouterLink to="/about">About</RouterLink>
       </nav> -->
 
-  <!-- <RouterView /> -->
+  <RouterView />
 </template>

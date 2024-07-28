@@ -155,9 +155,11 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, Ref, onMounted, onUnmounted } from 'vue'
+import { defineComponent, ref, type Ref, onMounted, onUnmounted } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
+
 import PDFViewer from './Viewers/PDFViewer.vue'
 import WebsiteViewer from './Viewers/WebsiteViewer.vue'
 import EpubViewer from './Viewers/EpubViewer.vue'
@@ -170,6 +172,18 @@ import { uploadLargeFile } from '@/utils/fileUpload'
 interface ChatMessage {
   sender: string
   text: string
+}
+
+interface UploadResponse {
+  id: string
+  file_name: string
+  file_type: string
+  url_friendly_file_name: string
+}
+
+interface DocumentDetails {
+  presigned_url: string
+  file_type: string
 }
 
 export default defineComponent({
@@ -188,7 +202,15 @@ export default defineComponent({
     TransitionRoot,
     MarkdownViewer
   },
-  setup() {
+  props: {
+    documentId: {
+      type: String,
+      required: false
+    }
+  },
+
+  setup(props) {
+    const router = useRouter()
     const url = ref('')
     const contentUrl = ref<string | null>(null)
 
@@ -212,6 +234,33 @@ export default defineComponent({
     const leftPanelWidth = ref(window.innerWidth / 2)
     const rightPanelWidth = ref(window.innerWidth / 2)
     const isDragging = ref(false)
+
+    const fetchDocumentDetails = async (id: string) => {
+      try {
+        const response = await axios.get<DocumentDetails>(
+          `http://localhost:8000/document-uploads/${id}`
+        )
+        contentUrl.value = response.data.presigned_url
+        updateFileType(response.data.file_type)
+      } catch (error) {
+        console.error('Error fetching document details:', error)
+        // Handle error (e.g., show error message to user)
+      }
+    }
+
+    const updateFileType = (type: string) => {
+      resetFileTypes(null)
+      isPDF.value = type === 'application/pdf'
+      isJSON.value = type === 'application/json'
+      isWebsite.value = type.startsWith('text/html')
+      isEpub.value = type === 'application/epub+zip'
+      isMarkdown.value = type === 'text/markdown' || type === 'text/plain'
+      isDocx.value =
+        type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      isSpreadsheet.value =
+        type === 'text/csv' ||
+        type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
 
     const startDragging = (e: MouseEvent) => {
       isDragging.value = true
@@ -240,6 +289,9 @@ export default defineComponent({
 
     onMounted(() => {
       window.addEventListener('resize', updatePanelWidths)
+      if (props.documentId) {
+        fetchDocumentDetails(props.documentId)
+      }
     })
 
     onUnmounted(() => {
@@ -300,6 +352,7 @@ export default defineComponent({
     const handleFileUpload = async (event: Event) => {
       const file = (event.target as HTMLInputElement).files?.[0]
       if (file) {
+        // The basic idea here is to be flexible with file inputs, a defer first to the file type and then then the extension
         try {
           let fileSupported: Boolean = false
           let fileType = ''
@@ -375,37 +428,10 @@ export default defineComponent({
             }
           }
 
-          const { data: uploadData } = await uploadLargeFile(file, fileType)
-          console.log('UPLOAD DATA?: ', uploadData)
+          const response: UploadResponse = await uploadLargeFile(file, fileType)
 
-          // const { data: uploadData } = await axios.post('http://localhost:8000/upload-url/', {
-          //   filename: file.name,
-          //   file_type: fileType
-          // })
-
-          // const maxRetries = 3
-          // for (let i = 0; i < maxRetries; i++) {
-          //   try {
-          //     await axios.put(uploadData.presigned_url, file, {
-          //       headers: {
-          //         'Content-Type': fileType
-          //       },
-          //       // Increase timeout for large files
-          //       timeout: 30000 // 30 seconds
-          //     })
-          //     break // Success, exit retry loop
-          //   } catch (uploadError) {
-          //     if (i === maxRetries - 1) throw uploadError // Rethrow on last attempt
-          //     console.log(`Upload attempt ${i + 1} failed, retrying...`)
-          //     await new Promise((resolve) => setTimeout(resolve, 1000)) // Wait 1 second before retrying
-          //   }
-          // }
-
-          // await axios.post('http://localhost:8000/document-uploads/', {
-          //   file_name: file.name,
-          //   file_type: fileType,
-          //   file_key: uploadData.file_key
-          // })
+          const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}`
+          router.push(newPath)
 
           contentUrl.value = URL.createObjectURL(file)
           error.value = null
@@ -464,7 +490,9 @@ export default defineComponent({
       resetFileTypes,
       leftPanelWidth,
       rightPanelWidth,
-      startDragging
+      startDragging,
+      fetchDocumentDetails,
+      updateFileType
     }
   }
 })
