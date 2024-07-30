@@ -214,6 +214,7 @@ interface ImportProgress {
   progress: number | null
   payload: {
     presigned_url?: string
+    file_type?: string
   }
 }
 
@@ -370,7 +371,7 @@ export default defineComponent({
         console.log('capture status: ', importProgress.value)
         if (data.status === 'COMPLETE' && data.payload.presigned_url) {
           contentUrl.value = data.payload.presigned_url
-          updateFileType('text/html')
+          updateFileType(data.payload.file_type)
           closeModal()
           if (websocket.value) {
             websocket.value.close()
