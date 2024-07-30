@@ -13,12 +13,16 @@
         </button>
 
         <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
-        <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
         <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
         <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
         <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
         <DocxViewer v-else-if="isDocx" :docxUrl="contentUrl" />
         <SpreadsheetViewer v-else-if="isSpreadsheet" :spreadsheetUrl="contentUrl" />
+        <WebsiteViewer
+          v-else-if="isWebsite"
+          :websiteUrl="contentUrl"
+          :captureStatus="captureStatus"
+        />
 
         <p v-else class="text-gray-500">No content loaded</p>
       </div>
@@ -186,6 +190,19 @@ interface DocumentDetails {
   file_type: string
 }
 
+interface WebsiteCaptureResponse {
+  task_id: string
+}
+
+interface WebsiteCaptureStatus {
+  task_id: string
+  status: string
+  progress: number | null
+  payload: {
+    presigned_url?: string
+  }
+}
+
 export default defineComponent({
   name: 'MainLayout',
   components: {
@@ -229,6 +246,10 @@ export default defineComponent({
     const chatMessages = ref<ChatMessage[]>([])
     const error = ref<string | null>(null)
     const isOpen = ref(false)
+
+    // Website capture related
+    const captureStatus = ref<WebsiteCaptureStatus | null>(null)
+    const websocket = ref<WebSocket | null>(null)
 
     // Used for reactive dragging.
     const leftPanelWidth = ref(window.innerWidth / 2)
@@ -296,6 +317,9 @@ export default defineComponent({
 
     onUnmounted(() => {
       window.removeEventListener('resize', updatePanelWidths)
+      if (websocket.value) {
+        websocket.value.close()
+      }
     })
 
     const updatePanelWidths = () => {
@@ -315,6 +339,54 @@ export default defineComponent({
       url.value = ''
     }
 
+    const connectWebSocket = (taskId: string) => {
+      websocket.value = new WebSocket(`ws://localhost:8000/ws/${taskId}`)
+
+      websocket.value.onopen = () => {
+        console.log('WebSocket connected')
+      }
+
+      websocket.value.onmessage = (event) => {
+        const data: WebsiteCaptureStatus = JSON.parse(event.data)
+        console.log('WebSocket message:', data)
+        captureStatus.value = data
+        console.log('capture status: ', captureStatus.value)
+        if (data.status === 'COMPLETE' && data.payload.presigned_url) {
+          contentUrl.value = data.payload.presigned_url
+          updateFileType('text/html')
+          closeModal()
+          if (websocket.value) {
+            websocket.value.close()
+          }
+        }
+      }
+
+      websocket.value.onerror = (error) => {
+        console.error('WebSocket error:', error)
+      }
+
+      websocket.value.onclose = () => {
+        console.log('WebSocket disconnected')
+      }
+    }
+
+    const captureWebsite = async () => {
+      try {
+        const response = await axios.post<WebsiteCaptureResponse>(
+          'http://localhost:8000/capture-website/',
+          {
+            url: url.value
+          }
+        )
+        const taskId = response.data.task_id
+        connectWebSocket(taskId)
+        captureStatus.value = { task_id: taskId, status: 'STARTED', progress: 0, payload: {} }
+      } catch (e) {
+        error.value = 'Failed to start website capture'
+        console.error(e)
+      }
+    }
+
     const loadContent = () => {
       console.log('Loading content:', url.value)
       error.value = null
@@ -322,9 +394,10 @@ export default defineComponent({
         try {
           // TODO: Import into correct doc type e.g., http://example.org/foo.pdf?
           resetFileTypes(null)
-          contentUrl.value = url.value
-          isWebsite.value = true
-          closeModal()
+          // contentUrl.value = url.value
+          // isWebsite.value = true
+          // closeModal()
+          captureWebsite()
         } catch (e) {
           error.value = 'Invalid URL. Please enter a valid URL.'
         }
@@ -492,7 +565,9 @@ export default defineComponent({
       rightPanelWidth,
       startDragging,
       fetchDocumentDetails,
-      updateFileType
+      updateFileType,
+      captureStatus,
+      captureWebsite
     }
   }
 })
