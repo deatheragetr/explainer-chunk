@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from config.s3 import s3_client
 from config.environment import WasabiSettings
-from config.redis import redis_client_sync as redis_client
+from config.redis import host as redis_host, port as redis_port, db as redis_db, Redis
 import json
 import asyncio
 from urllib.parse import urljoin, urlparse
@@ -16,7 +16,7 @@ from huey.api import Task as HueyTask
 
 # Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     filename="capture_website.log",
 )
@@ -63,12 +63,13 @@ class ProgressData(TypedDict, total=False):
 
 
 async def update_progress(
+    redis_client: Redis,  # type: Redis[bytes]
     task_id: str,
     status: str,
-    progress: float = None,
-    payload: ProgressData = ProgressData(),
+    progress: Optional[float] = None,
+    payload: Optional[ProgressData] = ProgressData(),
 ):
-    redis_client.publish(
+    await redis_client.publish(
         "capture_website_task",
         json.dumps(
             {
@@ -87,20 +88,29 @@ async def get_session():
         yield session
 
 
+@asynccontextmanager
+async def get_redis_client():
+    client = Redis(host=redis_host, port=redis_port, db=redis_db)
+    try:
+        yield client
+    finally:
+        await client.close()
+
+
 async def async_capture(url: str, capture_id: str):
-    async with aiohttp.ClientSession() as session:
+    async with get_redis_client() as redis_client, get_session() as session:
         try:
-            await update_progress(capture_id, "STARTED")
+            await update_progress(redis_client, capture_id, "STARTED")
 
             # Fetch main HTML
-            await update_progress(capture_id, "PROGRESS", 10)
+            await update_progress(redis_client, capture_id, "PROGRESS", 10)
             async with session.get(url) as response:
                 html_content = await response.text()
 
             soup = BeautifulSoup(html_content, "html.parser")
 
             # Process CSS files
-            await update_progress(capture_id, "PROGRESS", 30)
+            await update_progress(redis_client, capture_id, "PROGRESS", 30)
             css_tasks: List[asyncio.Task[str | None]] = []
 
             for tag in soup.find_all("link", rel="stylesheet"):
@@ -117,7 +127,7 @@ async def async_capture(url: str, capture_id: str):
                     tag["href"] = new_url
 
             # Process JavaScript files
-            await update_progress(capture_id, "PROGRESS", 50)
+            await update_progress(redis_client, capture_id, "PROGRESS", 50)
             js_tasks: List[asyncio.Task[str | None]] = []
 
             for tag in soup.find_all("script", src=True):
@@ -131,7 +141,7 @@ async def async_capture(url: str, capture_id: str):
                     tag["src"] = new_url
 
             # Process images
-            await update_progress(capture_id, "PROGRESS", 70)
+            await update_progress(redis_client, capture_id, "PROGRESS", 70)
             img_tasks: List[asyncio.Task[str | None]] = []
 
             for tag in soup.find_all("img", src=True):
@@ -145,7 +155,7 @@ async def async_capture(url: str, capture_id: str):
                     tag["src"] = new_url
 
             # Store the modified HTML
-            await update_progress(capture_id, "PROGRESS", 90)
+            await update_progress(redis_client, capture_id, "PROGRESS", 90)
             html_key = f"captures/{capture_id}/index.html"
             s3_client.put_object(
                 Bucket=S3_BUCKET,
@@ -161,7 +171,11 @@ async def async_capture(url: str, capture_id: str):
             )
 
             await update_progress(
-                capture_id, "COMPLETE", 100, ProgressData(presigned_url=capture_url)
+                redis_client,
+                capture_id,
+                "COMPLETE",
+                100,
+                ProgressData(presigned_url=capture_url),
             )
             return {
                 "status": "Website captured successfully",
@@ -169,7 +183,7 @@ async def async_capture(url: str, capture_id: str):
             }
 
         except Exception as e:
-            await update_progress(capture_id, "ERROR")
+            await update_progress(redis_client, capture_id, "ERROR")
             print("ERROR: IN CAPTURE WEB SITE: ", str(e))
             print("ERROR: IN CAPTURE WEB SITE: ", e.__traceback__)
             logger.error(f"Task failed for URL: {url}, Task ID: {capture_id}")
@@ -178,7 +192,7 @@ async def async_capture(url: str, capture_id: str):
 
 
 @huey.task(context=True)
-def capture_website(url: str, task: HueyTask = None):
+def capture_website(url: str, task: Optional[HueyTask] = None):
     if task:
         # This is the task execution path
         capture_id: str = task.id
