@@ -1,11 +1,6 @@
 <template>
   <div class="website-viewer">
-    <div v-if="captureStatus && captureStatus.status !== 'COMPLETE'" class="capture-status">
-      <p>Capture Status: {{ captureStatus.status }}</p>
-      <progress v-if="captureStatus.progress" :value="captureStatus.progress" max="100"></progress>
-    </div>
     <iframe
-      v-else
       :src="websiteUrl"
       class="w-full h-[calc(100vh-200px)]"
       sandbox="allow-scripts allow-same-origin"
@@ -15,13 +10,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, PropType } from 'vue'
-
-interface WebsiteCaptureStatus {
-  task_id: string
-  status: string
-  progress: number | null
-}
+import { defineComponent } from 'vue'
 
 export default defineComponent({
   name: 'WebsiteViewer',
@@ -29,10 +18,6 @@ export default defineComponent({
     websiteUrl: {
       type: String,
       required: true
-    },
-    captureStatus: {
-      type: Object as PropType<WebsiteCaptureStatus>,
-      required: false
     }
   },
   setup(props) {

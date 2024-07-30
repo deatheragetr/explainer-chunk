@@ -138,6 +138,19 @@
                     class="mb-2"
                   />
                   <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
+                  <!-- Import Progress Bar -->
+                  <div v-if="importProgress" class="mt-4">
+                    <div class="text-sm font-medium text-gray-700">
+                      Processing Document. {{ importProgress.progress || 0 }}%
+                      {{ importProgress.status }}
+                    </div>
+                    <div class="mt-1 h-2 w-full bg-gray-200 rounded-full">
+                      <div
+                        class="h-2 bg-blue-600 rounded-full"
+                        :style="{ width: `${importProgress.progress || 0}%` }"
+                      ></div>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="mt-4">
@@ -145,6 +158,7 @@
                     type="button"
                     class="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     @click="loadContent"
+                    :disabled="importProgress && importProgress.status !== 'COMPLETE'"
                   >
                     Load Content
                   </button>
@@ -194,8 +208,8 @@ interface WebsiteCaptureResponse {
   task_id: string
 }
 
-interface WebsiteCaptureStatus {
-  task_id: string
+interface ImportProgress {
+  task_id?: string
   status: string
   progress: number | null
   payload: {
@@ -247,8 +261,10 @@ export default defineComponent({
     const error = ref<string | null>(null)
     const isOpen = ref(false)
 
+    // Status loading bar data
+    const importProgress = ref<ImportProgress | null>(null)
+
     // Website capture related
-    const captureStatus = ref<WebsiteCaptureStatus | null>(null)
     const websocket = ref<WebSocket | null>(null)
 
     // Used for reactive dragging.
@@ -337,6 +353,7 @@ export default defineComponent({
       isOpen.value = false
       error.value = null
       url.value = ''
+      importProgress.value = null
     }
 
     const connectWebSocket = (taskId: string) => {
@@ -347,10 +364,10 @@ export default defineComponent({
       }
 
       websocket.value.onmessage = (event) => {
-        const data: WebsiteCaptureStatus = JSON.parse(event.data)
+        const data: ImportProgress = JSON.parse(event.data)
         console.log('WebSocket message:', data)
-        captureStatus.value = data
-        console.log('capture status: ', captureStatus.value)
+        importProgress.value = data
+        console.log('capture status: ', importProgress.value)
         if (data.status === 'COMPLETE' && data.payload.presigned_url) {
           contentUrl.value = data.payload.presigned_url
           updateFileType('text/html')
@@ -380,7 +397,7 @@ export default defineComponent({
         )
         const taskId = response.data.task_id
         connectWebSocket(taskId)
-        captureStatus.value = { task_id: taskId, status: 'STARTED', progress: 0, payload: {} }
+        importProgress.value = { task_id: taskId, status: 'STARTED', progress: 0, payload: {} }
       } catch (e) {
         error.value = 'Failed to start website capture'
         console.error(e)
@@ -394,9 +411,6 @@ export default defineComponent({
         try {
           // TODO: Import into correct doc type e.g., http://example.org/foo.pdf?
           resetFileTypes(null)
-          // contentUrl.value = url.value
-          // isWebsite.value = true
-          // closeModal()
           captureWebsite()
         } catch (e) {
           error.value = 'Invalid URL. Please enter a valid URL.'
@@ -501,12 +515,35 @@ export default defineComponent({
             }
           }
 
-          const response: UploadResponse = await uploadLargeFile(file, fileType)
+          importProgress.value = {
+            status: 'preparing upload',
+            progress: 10,
+            payload: {}
+          }
+
+          const response: UploadResponse = await uploadLargeFile(
+            file,
+            fileType,
+            importProgress.value
+          )
+
+          importProgress.value = {
+            status: 'uploaded',
+            progress: 90,
+            payload: {}
+          }
 
           const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}/read`
           router.push(newPath)
 
           contentUrl.value = URL.createObjectURL(file)
+
+          importProgress.value = {
+            status: 'complete',
+            progress: 100,
+            payload: {}
+          }
+
           error.value = null
           closeModal()
         } catch (e) {
@@ -566,7 +603,7 @@ export default defineComponent({
       startDragging,
       fetchDocumentDetails,
       updateFileType,
-      captureStatus,
+      importProgress,
       captureWebsite
     }
   }
