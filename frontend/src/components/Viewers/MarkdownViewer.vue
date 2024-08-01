@@ -1,13 +1,13 @@
 <template>
   <div class="markdown-viewer">
     <div v-if="error" class="error-message">{{ error }}</div>
-    <div v-else-if="!markdownContent" class="loading-message">Loading content...</div>
+    <div v-else-if="!renderedContent" class="loading-message">Loading content...</div>
     <div v-else v-html="renderedContent" class="markdown-viewer-component-content"></div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, watch } from 'vue'
+import { defineComponent, ref, watch } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -22,21 +22,28 @@ export default defineComponent({
   setup(props) {
     const markdownContent = ref<string | null>(null)
     const error = ref<string | null>(null)
+    const renderedContent = ref<string>('')
 
-    const renderedContent = computed(() => {
-      if (markdownContent.value) {
-        try {
-          const rawHtml = marked(markdownContent.value)
-          console.log('marked?: ', marked)
-          return DOMPurify.sanitize(rawHtml)
-        } catch (err) {
-          // If parsing as Markdown fails, return the content as plain text
-          console.warn('Failed to parse as Markdown, rendering as plain text:', err)
-          return DOMPurify.sanitize(markdownContent.value.replace(/\n/g, '<br>'))
+    const renderMarkdown = async (content: string): Promise<string> => {
+      try {
+        const rawHtml = await marked(content)
+        return DOMPurify.sanitize(rawHtml)
+      } catch (err) {
+        console.warn('Failed to parse as Markdown, rendering as plain text:', err)
+        return DOMPurify.sanitize(content.replace(/\n/g, '<br>'))
+      }
+    }
+
+    watch(
+      () => markdownContent.value,
+      async (newContent) => {
+        if (newContent) {
+          renderedContent.value = await renderMarkdown(newContent)
+        } else {
+          renderedContent.value = ''
         }
       }
-      return ''
-    })
+    )
 
     const loadMarkdown = async (url: string) => {
       try {
@@ -60,7 +67,7 @@ export default defineComponent({
       { immediate: true }
     )
 
-    return { markdownContent, error, renderedContent }
+    return { error, renderedContent }
   }
 })
 </script>

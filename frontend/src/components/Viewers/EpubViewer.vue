@@ -276,6 +276,7 @@ export default defineComponent({
 
 input[type='range'] {
   -webkit-appearance: none;
+  appearance: none;
   width: 100%;
   height: 5px;
   border-radius: 5px;

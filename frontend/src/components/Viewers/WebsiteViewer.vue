@@ -20,7 +20,7 @@ export default defineComponent({
       required: true
     }
   },
-  setup(props) {
+  setup() {
     // Any additional setup logic can go here
     return {}
   }

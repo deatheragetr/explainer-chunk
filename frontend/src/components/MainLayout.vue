@@ -18,11 +18,7 @@
         <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
         <DocxViewer v-else-if="isDocx" :docxUrl="contentUrl" />
         <SpreadsheetViewer v-else-if="isSpreadsheet" :spreadsheetUrl="contentUrl" />
-        <WebsiteViewer
-          v-else-if="isWebsite"
-          :websiteUrl="contentUrl"
-          :captureStatus="captureStatus"
-        />
+        <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
 
         <p v-else class="text-gray-500">No content loaded</p>
       </div>
@@ -91,7 +87,7 @@
 
     <!-- Modal -->
     <TransitionRoot appear :show="isOpen" as="template">
-      <Dialog as="div" @close="closeModal" class="relative z-10">
+      <CustomDialog as="div" @close="closeModal" class="relative z-10">
         <TransitionChild
           as="template"
           enter="duration-300 ease-out"
@@ -158,7 +154,7 @@
                     type="button"
                     class="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     @click="loadContent"
-                    :disabled="importProgress && importProgress.status !== 'COMPLETE'"
+                    :disabled="isDialogButtonDisabled"
                   >
                     Load Content
                   </button>
@@ -167,14 +163,20 @@
             </TransitionChild>
           </div>
         </div>
-      </Dialog>
+      </CustomDialog>
     </TransitionRoot>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, type Ref, onMounted, onUnmounted } from 'vue'
-import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { defineComponent, ref, type Ref, onMounted, onUnmounted, computed } from 'vue'
+import {
+  Dialog as CustomDialog,
+  DialogPanel,
+  DialogTitle,
+  TransitionChild,
+  TransitionRoot
+} from '@headlessui/vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -235,7 +237,7 @@ export default defineComponent({
     JSONViewer,
     DocxViewer,
     SpreadsheetViewer,
-    Dialog,
+    CustomDialog,
     DialogPanel,
     DialogTitle,
     TransitionChild,
@@ -252,7 +254,7 @@ export default defineComponent({
   setup(props) {
     const router = useRouter()
     const url = ref('')
-    const contentUrl = ref<string | null>(null)
+    const contentUrl = ref<string>('')
 
     const isPDF = ref(false)
     const isJSON = ref(false)
@@ -281,6 +283,10 @@ export default defineComponent({
     const rightPanelWidth = ref(window.innerWidth / 2)
     const isDragging = ref(false)
 
+    const isDialogButtonDisabled = computed(() => {
+      return !!importProgress.value && importProgress.value.status !== 'COMPLETE'
+    })
+
     const fetchDocumentDetails = async (id: string) => {
       try {
         const response = await axios.get<DocumentDetails>(
@@ -308,7 +314,7 @@ export default defineComponent({
         type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     }
 
-    const startDragging = (e: MouseEvent) => {
+    const startDragging = () => {
       isDragging.value = true
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', stopDragging)
@@ -379,7 +385,7 @@ export default defineComponent({
         console.log('capture status: ', importProgress.value)
         if (data.status === 'COMPLETE' && data.payload.presigned_url) {
           contentUrl.value = data.payload.presigned_url
-          updateFileType(data.payload.file_type)
+          if (data.payload.file_type) updateFileType(data.payload.file_type)
 
           const newPath = `/uploads/${data.payload.document_upload_id}/${data.payload.url_friendly_file_name}/read`
           router.push(newPath)
@@ -620,7 +626,8 @@ export default defineComponent({
       fetchDocumentDetails,
       updateFileType,
       importProgress,
-      captureWebsite
+      captureWebsite,
+      isDialogButtonDisabled
     }
   }
 })
