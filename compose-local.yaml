@@ -26,4 +26,18 @@ services:
       ME_CONFIG_MONGODB_ADMINPASSWORD: example
       ME_CONFIG_MONGODB_URL: mongodb://root:example@mongo:27017/
       ME_CONFIG_BASICAUTH: false
+
+  redis:
+    image: redis/redis-stack:7.2.0-v10
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - redis-data:/data/redis
+    ports:
+      - 6379:6379
+      - 8001:8001
+
+volumes:
+  redis-data:
   

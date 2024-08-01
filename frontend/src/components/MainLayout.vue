@@ -13,12 +13,12 @@
         </button>
 
         <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
-        <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
         <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
         <JSONViewer v-else-if="isJSON" :jsonUrl="contentUrl" />
         <MarkdownViewer v-else-if="isMarkdown" :markdownUrl="contentUrl" />
         <DocxViewer v-else-if="isDocx" :docxUrl="contentUrl" />
         <SpreadsheetViewer v-else-if="isSpreadsheet" :spreadsheetUrl="contentUrl" />
+        <WebsiteViewer v-else-if="isWebsite" :websiteUrl="contentUrl" />
 
         <p v-else class="text-gray-500">No content loaded</p>
       </div>
@@ -87,7 +87,7 @@
 
     <!-- Modal -->
     <TransitionRoot appear :show="isOpen" as="template">
-      <Dialog as="div" @close="closeModal" class="relative z-10">
+      <CustomDialog as="div" @close="closeModal" class="relative z-10">
         <TransitionChild
           as="template"
           enter="duration-300 ease-out"
@@ -134,6 +134,19 @@
                     class="mb-2"
                   />
                   <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
+                  <!-- Import Progress Bar -->
+                  <div v-if="importProgress" class="mt-4">
+                    <div class="text-sm font-medium text-gray-700">
+                      Processing Document. {{ importProgress.progress || 0 }}%
+                      {{ importProgress.status }}
+                    </div>
+                    <div class="mt-1 h-2 w-full bg-gray-200 rounded-full">
+                      <div
+                        class="h-2 bg-blue-600 rounded-full"
+                        :style="{ width: `${importProgress.progress || 0}%` }"
+                      ></div>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="mt-4">
@@ -141,6 +154,7 @@
                     type="button"
                     class="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     @click="loadContent"
+                    :disabled="isDialogButtonDisabled"
                   >
                     Load Content
                   </button>
@@ -149,14 +163,20 @@
             </TransitionChild>
           </div>
         </div>
-      </Dialog>
+      </CustomDialog>
     </TransitionRoot>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, type Ref, onMounted, onUnmounted } from 'vue'
-import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { defineComponent, ref, type Ref, onMounted, onUnmounted, computed } from 'vue'
+import {
+  Dialog as CustomDialog,
+  DialogPanel,
+  DialogTitle,
+  TransitionChild,
+  TransitionRoot
+} from '@headlessui/vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -186,6 +206,28 @@ interface DocumentDetails {
   file_type: string
 }
 
+interface WebsiteCaptureResponse {
+  url: string
+  document_upload_id: string
+}
+
+interface ImportDocumentUploadResponse {
+  id: string
+}
+
+interface ImportProgress {
+  task_id?: string
+  connection_id?: string
+  status: string
+  progress: number | null
+  payload: {
+    presigned_url?: string
+    file_type?: string
+    document_upload_id?: string
+    url_friendly_file_name?: string
+  }
+}
+
 export default defineComponent({
   name: 'MainLayout',
   components: {
@@ -195,7 +237,7 @@ export default defineComponent({
     JSONViewer,
     DocxViewer,
     SpreadsheetViewer,
-    Dialog,
+    CustomDialog,
     DialogPanel,
     DialogTitle,
     TransitionChild,
@@ -212,7 +254,7 @@ export default defineComponent({
   setup(props) {
     const router = useRouter()
     const url = ref('')
-    const contentUrl = ref<string | null>(null)
+    const contentUrl = ref<string>('')
 
     const isPDF = ref(false)
     const isJSON = ref(false)
@@ -230,10 +272,20 @@ export default defineComponent({
     const error = ref<string | null>(null)
     const isOpen = ref(false)
 
+    // Status loading bar data
+    const importProgress = ref<ImportProgress | null>(null)
+
+    // Website capture related
+    const websocket = ref<WebSocket | null>(null)
+
     // Used for reactive dragging.
     const leftPanelWidth = ref(window.innerWidth / 2)
     const rightPanelWidth = ref(window.innerWidth / 2)
     const isDragging = ref(false)
+
+    const isDialogButtonDisabled = computed(() => {
+      return !!importProgress.value && importProgress.value.status !== 'COMPLETE'
+    })
 
     const fetchDocumentDetails = async (id: string) => {
       try {
@@ -262,7 +314,7 @@ export default defineComponent({
         type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     }
 
-    const startDragging = (e: MouseEvent) => {
+    const startDragging = () => {
       isDragging.value = true
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', stopDragging)
@@ -296,6 +348,9 @@ export default defineComponent({
 
     onUnmounted(() => {
       window.removeEventListener('resize', updatePanelWidths)
+      if (websocket.value) {
+        websocket.value.close()
+      }
     })
 
     const updatePanelWidths = () => {
@@ -313,6 +368,64 @@ export default defineComponent({
       isOpen.value = false
       error.value = null
       url.value = ''
+      importProgress.value = null
+    }
+
+    const connectWebSocket = (connectionId: string) => {
+      websocket.value = new WebSocket(`ws://localhost:8000/ws/${connectionId}`)
+
+      websocket.value.onopen = () => {
+        console.log('WebSocket connected')
+      }
+
+      websocket.value.onmessage = (event) => {
+        const data: ImportProgress = JSON.parse(event.data)
+        console.log('WebSocket message:', data)
+        importProgress.value = data
+        console.log('capture status: ', importProgress.value)
+        if (data.status === 'COMPLETE' && data.payload.presigned_url) {
+          contentUrl.value = data.payload.presigned_url
+          if (data.payload.file_type) updateFileType(data.payload.file_type)
+
+          const newPath = `/uploads/${data.payload.document_upload_id}/${data.payload.url_friendly_file_name}/read`
+          router.push(newPath)
+          closeModal()
+          if (websocket.value) {
+            websocket.value.close()
+          }
+        }
+      }
+
+      websocket.value.onerror = (error) => {
+        console.error('WebSocket error:', error)
+      }
+
+      websocket.value.onclose = () => {
+        console.log('WebSocket disconnected')
+      }
+    }
+
+    const captureWebsite = async () => {
+      try {
+        // Create Document Upload { import: true }
+        // Open websocket connection using document_id
+        // Pass { url: url.value, document_id } to the POST capture-website endpoint
+        importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 0, payload: {} }
+        const importDocRes = await axios.post<ImportDocumentUploadResponse>(
+          'http://localhost:8000/document-uploads/imports',
+          {}
+        )
+        importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 5, payload: {} }
+        connectWebSocket(importDocRes.data.id)
+        await axios.post<WebsiteCaptureResponse>('http://localhost:8000/capture-website/', {
+          url: url.value,
+          document_upload_id: importDocRes.data.id
+        })
+        resetFileTypes(null)
+      } catch (e) {
+        error.value = 'Failed to start website capture'
+        console.error(e)
+      }
     }
 
     const loadContent = () => {
@@ -320,11 +433,7 @@ export default defineComponent({
       error.value = null
       if (url.value) {
         try {
-          // TODO: Import into correct doc type e.g., http://example.org/foo.pdf?
-          resetFileTypes(null)
-          contentUrl.value = url.value
-          isWebsite.value = true
-          closeModal()
+          captureWebsite()
         } catch (e) {
           error.value = 'Invalid URL. Please enter a valid URL.'
         }
@@ -428,12 +537,35 @@ export default defineComponent({
             }
           }
 
-          const response: UploadResponse = await uploadLargeFile(file, fileType)
+          importProgress.value = {
+            status: 'preparing upload',
+            progress: 10,
+            payload: {}
+          }
+
+          const response: UploadResponse = await uploadLargeFile(
+            file,
+            fileType,
+            importProgress.value
+          )
+
+          importProgress.value = {
+            status: 'uploaded',
+            progress: 90,
+            payload: {}
+          }
 
           const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}/read`
           router.push(newPath)
 
           contentUrl.value = URL.createObjectURL(file)
+
+          importProgress.value = {
+            status: 'complete',
+            progress: 100,
+            payload: {}
+          }
+
           error.value = null
           closeModal()
         } catch (e) {
@@ -492,7 +624,10 @@ export default defineComponent({
       rightPanelWidth,
       startDragging,
       fetchDocumentDetails,
-      updateFileType
+      updateFileType,
+      importProgress,
+      captureWebsite,
+      isDialogButtonDisabled
     }
   }
 })
