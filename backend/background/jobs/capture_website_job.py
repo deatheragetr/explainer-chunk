@@ -51,6 +51,10 @@ class ProgressData(TypedDict, total=False):
     presigned_url: Annotated[Optional[str], "S3 Presigned URL"]
     file_type: Annotated[Optional[str], "File Type"]
     file_name: Annotated[Optional[str], "File Name"]
+    document_upload_id: Annotated[Optional[str], "Document Upload ID"]
+    url_friendly_file_name: Annotated[
+        Optional[str], "URL-friendly version of the file name"
+    ]
 
 
 supported_file_types = {
@@ -142,7 +146,7 @@ async def get_redis_client():
 
 
 async def capture_html(
-    redis_client: Redis,
+    redis_client: Redis,  # type: Redis[bytes]
     session: ClientSession,
     url: str,
     response: aiohttp.ClientResponse,
@@ -218,6 +222,29 @@ async def capture_html(
             ExpiresIn=3600,
         )
 
+        s3_url = generate_s3_url(S3_HOST, DOCUMENT_UPLOAD_BUCKET, html_key)
+        mongo_file_details = create_mongo_file_details(
+            file_name="index.html",
+            file_type=supported_file_types["html"],
+            file_key=html_key,
+            s3_url=s3_url,
+            s3_bucket=DOCUMENT_UPLOAD_BUCKET,
+            source=SourceType.WEB,
+            source_url=url,
+        )
+
+        document = MongoDocumentUpload(
+            _id=ObjectId(document_upload_id), file_details=mongo_file_details
+        )
+
+        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
+
+        await collection.update_one(
+            {"_id": ObjectId(document_upload_id)},
+            {"$set": document},
+            upsert=True,
+        )
+
         await update_progress(
             redis_client,
             document_upload_id,
@@ -227,6 +254,10 @@ async def capture_html(
                 presigned_url=capture_url,
                 file_type=supported_file_types["html"],
                 file_name="index.html",
+                document_upload_id=document_upload_id,
+                url_friendly_file_name=document["file_details"][
+                    "url_friendly_file_name"
+                ],
             ),
         )
         return {

@@ -55,14 +55,14 @@ def generate_s3_key_for_file(
     folder: Folder, object_id: ObjectId, file_name: str
 ) -> str:
     url_friendly_file_name = make_url_friendly(file_name)
-    return f"{folder}/{object_id}-{url_friendly_file_name}"
+    return f"{folder.value}/{object_id}-{url_friendly_file_name}"
 
 
 def generate_s3_key_for_web_capture(
     object_id: ObjectId, file_name: str, folder: Folder
 ) -> str:
     url_friendly_file_name = make_url_friendly(file_name)
-    return f"{folder}/{object_id}/{url_friendly_file_name}"
+    return f"{folder.value}/{object_id}/{url_friendly_file_name}"
 
 
 def generate_s3_url(s3_host: str, s3_bucket: S3Bucket, file_key: str) -> str:
