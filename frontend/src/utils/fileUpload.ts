@@ -119,15 +119,20 @@ export async function uploadLargeFile(
   const chunks: { start: number; end: number; partNumber: number }[] = []
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
-  importProgress.progress = 20
+  console.log('totalChunks', totalChunks)
+  console.log('file.size', file.size)
+
+  importProgress.progress = 10
+  importProgress.status = 'preparing for upload'
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE
     const end = Math.min(start + CHUNK_SIZE, file.size)
-    importProgress.progress = 20 + (i / totalChunks) * 30
+    importProgress.progress = 10 + Math.floor(i / totalChunks) * 10
     chunks.push({ start, end, partNumber: i + 1 })
   }
 
   importProgress.status = 'uploading'
+  let chunksProcessed = 0
   const parts = await parallelLimit(chunks, concurrency, async (chunk) => {
     const { start, end, partNumber } = chunk
     const chunkData = file.slice(start, end)
@@ -135,7 +140,8 @@ export async function uploadLargeFile(
     const { presignedUrl } = await generatePresignedUrl(uploadId, fileKey, partNumber)
     const partData = await retryOperation(() => uploadPart(presignedUrl, chunkData, partNumber))
 
-    importProgress.progress = 20 + (partNumber / totalChunks) * 30
+    chunksProcessed++
+    importProgress.progress = 20 + Math.floor((chunksProcessed / totalChunks) * 30)
     console.log(`Uploaded part ${partNumber} of ${totalChunks}`)
     return partData
   })
