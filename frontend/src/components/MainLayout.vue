@@ -221,6 +221,8 @@ interface ImportProgress {
   payload: {
     presigned_url?: string
     file_type?: string
+    document_upload_id?: string
+    url_friendly_file_name?: string
   }
 }
 
@@ -378,6 +380,9 @@ export default defineComponent({
         if (data.status === 'COMPLETE' && data.payload.presigned_url) {
           contentUrl.value = data.payload.presigned_url
           updateFileType(data.payload.file_type)
+
+          const newPath = `/uploads/${data.payload.document_upload_id}/${data.payload.url_friendly_file_name}/read`
+          router.push(newPath)
           closeModal()
           if (websocket.value) {
             websocket.value.close()
