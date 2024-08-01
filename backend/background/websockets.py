@@ -5,16 +5,16 @@ websocket_connections: Dict[str, WebSocket] = {}
 router = APIRouter()
 
 
-@router.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: str):
+@router.websocket("/ws/{ws_id}")
+async def websocket_endpoint(websocket: WebSocket, ws_id: str):
     await websocket.accept()
-    websocket_connections[client_id] = websocket
+    websocket_connections[ws_id] = websocket
     print("Websocket connections (from controller): ", websocket_connections)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        del websocket_connections[client_id]
+        del websocket_connections[ws_id]
 
 
 from typing import Optional, Dict, Any
@@ -36,14 +36,15 @@ async def redis_subscriber():
             )
             if message is not None:
                 print(f"Got message: {message}")
-                print(f"Type of message Data: {type(message["data"])}")
-                data = json.loads(message["data"])
-                print(f"Type of Client Id: {type(data['task_id'])}")
-                print("Websocket connections (from redis subscriber): ", websocket_connections)
-                if data["task_id"] in websocket_connections:
-                    await websocket_connections[data["task_id"]].send_text(
-                        json.dumps(data)
-                    )
+                if message["data"] is not None:
+                    print(f"Type of message Data: {type(message["data"])}")
+                    data = json.loads(message["data"])
+                    print(f"Type of Client Id: {type(data['connection_id'])}")
+                    print("Websocket connections (from redis subscriber): ", websocket_connections)
+                    if data["connection_id"] in websocket_connections:
+                        await websocket_connections[data["connection_id"]].send_text(
+                            json.dumps(data)
+                        )
         except Exception as e:
             print(f"Error in redis subscriber: {e}")
             await asyncio.sleep(1)  # Wait a bit before retrying

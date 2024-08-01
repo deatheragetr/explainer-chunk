@@ -3,4 +3,5 @@ from typing import Annotated
 
 
 class WebsiteCaptureResponse(BaseModel):
-    task_id: Annotated[str, "ID of task"]
+    url: Annotated[str, "url"]
+    document_upload_id: Annotated[str, "document_upload_id"]

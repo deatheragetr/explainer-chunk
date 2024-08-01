@@ -4,6 +4,10 @@ from typing import Annotated
 
 class WebsiteCaptureRequest(BaseModel):
     url: Annotated[str, "URL of website to capture"]
+    document_upload_id: Annotated[
+        str, "MongoDB ObjectId of document_upload to associate with capture"
+    ]
+    # TODO: Share mongodb id validation logic with other models
 
     @field_validator("url")
     def validate_url(cls, v: str) -> str:

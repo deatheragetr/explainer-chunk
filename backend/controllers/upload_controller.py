@@ -63,7 +63,7 @@ async def complete_multipart_upload(
             Bucket=settings.wasabi_document_bucket,
             Key=request.file_key,
             UploadId=upload_id,
-            MultipartUpload={"Parts": [part.model_dump() for part in request.parts]},
+            MultipartUpload={"Parts": request.parts},
         )
     except ClientError as e:
         raise HTTPException(status_code=500, detail=str(e))

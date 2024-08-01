@@ -1,13 +1,19 @@
 from fastapi import APIRouter, HTTPException, Body
 from bson import ObjectId
-from db.models.document_uploads import MongoDocumentUpload, MongoFileDetails
+from db.models.document_uploads import (
+    MongoDocumentUpload,
+    create_mongo_file_details,
+    generate_s3_url,
+    AllowedS3Buckets,
+    SourceType,
+)
 from api.requests.document_upload import DocumentUploadRequest
 from api.responses.document_upload import (
     DocumentUploadResponse,
     DocumentRetrieveResponse,
+    DocumentUploadImportExternalResponse,
 )
 from api.utils.s3_utils import verify_s3_object
-from api.utils.url_friendly import make_url_friendly
 from typing import Annotated
 from config.environment import WasabiSettings
 from config.mongo import db
@@ -20,11 +26,31 @@ wasabiSettings = WasabiSettings()
 router = APIRouter()
 
 
-@router.post("/document-uploads/", response_model=DocumentUploadResponse)
+@router.post(
+    "/document-uploads/imports", response_model=DocumentUploadImportExternalResponse
+)
+async def upload_document_from_import():
+    try:
+        # TODO: Push to redis websocket list along with user data
+        return DocumentUploadImportExternalResponse(id=str(ObjectId()))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/document-uploads/",
+    response_model=DocumentUploadResponse,
+)
 async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
     # register file with Wasabi
     try:
+        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
         s3_url = f"{wasabiSettings.wasabi_endpoint_url}/{wasabiSettings.wasabi_document_bucket}/{reqBody.file_key}"
+        s3_url = generate_s3_url(
+            wasabiSettings.wasabi_endpoint_url,
+            AllowedS3Buckets.DOCUMENT_UPLOADS,
+            reqBody.file_key,
+        )
         doc_id = reqBody.extracted_object_id
 
         # Verify s3_url is valid
@@ -36,17 +62,16 @@ async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
         # Save to MongoDB
         document = MongoDocumentUpload(
             _id=doc_id,
-            file_details=MongoFileDetails(
+            file_details=create_mongo_file_details(
                 file_name=reqBody.file_name,
                 file_type=reqBody.file_type,
                 file_key=reqBody.file_key,
                 s3_bucket=wasabiSettings.wasabi_document_bucket,
-                url_friendly_file_name=make_url_friendly(reqBody.file_name),
+                source=SourceType.FILE_UPLOAD,
                 s3_url=s3_url,
             ),
         )
 
-        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
         try:
             result: InsertOneResult = await collection.insert_one(document)
         except DuplicateKeyError:
