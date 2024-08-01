@@ -205,11 +205,17 @@ interface DocumentDetails {
 }
 
 interface WebsiteCaptureResponse {
-  task_id: string
+  url: string
+  document_upload_id: string
+}
+
+interface ImportDocumentUploadResponse {
+  id: string
 }
 
 interface ImportProgress {
   task_id?: string
+  connection_id?: string
   status: string
   progress: number | null
   payload: {
@@ -357,8 +363,8 @@ export default defineComponent({
       importProgress.value = null
     }
 
-    const connectWebSocket = (taskId: string) => {
-      websocket.value = new WebSocket(`ws://localhost:8000/ws/${taskId}`)
+    const connectWebSocket = (connectionId: string) => {
+      websocket.value = new WebSocket(`ws://localhost:8000/ws/${connectionId}`)
 
       websocket.value.onopen = () => {
         console.log('WebSocket connected')
@@ -390,15 +396,21 @@ export default defineComponent({
 
     const captureWebsite = async () => {
       try {
-        const response = await axios.post<WebsiteCaptureResponse>(
-          'http://localhost:8000/capture-website/',
-          {
-            url: url.value
-          }
+        // Create Document Upload { import: true }
+        // Open websocket connection using document_id
+        // Pass { url: url.value, document_id } to the POST capture-website endpoint
+        importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 0, payload: {} }
+        const importDocRes = await axios.post<ImportDocumentUploadResponse>(
+          'http://localhost:8000/document-uploads/imports',
+          {}
         )
-        const taskId = response.data.task_id
-        connectWebSocket(taskId)
-        importProgress.value = { task_id: taskId, status: 'STARTED', progress: 0, payload: {} }
+        importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 5, payload: {} }
+        connectWebSocket(importDocRes.data.id)
+        await axios.post<WebsiteCaptureResponse>('http://localhost:8000/capture-website/', {
+          url: url.value,
+          document_upload_id: importDocRes.data.id
+        })
+        resetFileTypes(null)
       } catch (e) {
         error.value = 'Failed to start website capture'
         console.error(e)
@@ -410,8 +422,6 @@ export default defineComponent({
       error.value = null
       if (url.value) {
         try {
-          // TODO: Import into correct doc type e.g., http://example.org/foo.pdf?
-          resetFileTypes(null)
           captureWebsite()
         } catch (e) {
           error.value = 'Invalid URL. Please enter a valid URL.'
