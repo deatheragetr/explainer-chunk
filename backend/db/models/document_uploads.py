@@ -2,13 +2,14 @@ from typing import TypedDict, Annotated, Literal, Optional, Union
 from api.utils.url_friendly import make_url_friendly
 from bson import ObjectId
 from enum import Enum
-from config.environment import WasabiSettings
+from config.environment import S3Settings
 
-settings = WasabiSettings()
+settings = S3Settings()
 
 
 class AllowedS3Buckets(str, Enum):
-    DOCUMENT_UPLOADS = settings.wasabi_document_bucket
+    DOCUMENT_UPLOADS = settings.s3_document_bucket
+    PUBLIC_BUCKET = settings.s3_public_bucket
 
 
 class AllowedFolders(str, Enum):
@@ -16,7 +17,7 @@ class AllowedFolders(str, Enum):
     DOCUMENT_UPLOADS = "document_uploads"
 
 
-S3Bucket = Literal[AllowedS3Buckets.DOCUMENT_UPLOADS]
+S3Bucket = Literal[AllowedS3Buckets.DOCUMENT_UPLOADS, AllowedS3Buckets.PUBLIC_BUCKET]
 Folder = Literal[AllowedFolders.WEB_CAPTURES, AllowedFolders.DOCUMENT_UPLOADS]
 
 
@@ -66,7 +67,7 @@ def generate_s3_key_for_web_capture(
 
 
 def generate_s3_url(s3_host: str, s3_bucket: S3Bucket, file_key: str) -> str:
-    return f"{s3_host}/{s3_bucket}/{file_key}"
+    return f"https://{s3_bucket.value}.{s3_host}/{file_key}"
 
 
 def create_mongo_file_details(

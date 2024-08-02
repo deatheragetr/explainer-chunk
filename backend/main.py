@@ -14,8 +14,8 @@ import asyncio
 
 # From huey's documentation, this is recommended, even though it's not directly used in this file
 # https://huey.readthedocs.io/en/latest/imports.html#suggested-organization-of-code
-from config.huey import huey  # type: ignore
-from background.jobs.capture_website_job import capture_website  # type: ignore
+# from huey import huey  # type: ignore
+from background.jobs.capture_website_job import huey, capture_website  # type: ignore
 
 
 @asynccontextmanager

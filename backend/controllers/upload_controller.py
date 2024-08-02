@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Path
 from bson import ObjectId
 from config.s3 import s3_client
-from config.environment import WasabiSettings
+from config.environment import S3Settings
 from api.requests.upload import (
     InitiateMultipartUploadRequest,
     GetUploadUrlRequest,
@@ -12,7 +12,7 @@ from typing import Annotated
 from botocore.exceptions import ClientError
 from api.utils.url_friendly import make_url_friendly
 
-settings = WasabiSettings()
+settings = S3Settings()
 router = APIRouter()
 
 
@@ -22,7 +22,7 @@ async def initiate_multipart_upload(request: InitiateMultipartUploadRequest):
         url_friendly_file_name = make_url_friendly(request.file_name)
         file_key = f"document_uploads/{ObjectId()}-{url_friendly_file_name}"
         response = s3_client.create_multipart_upload(
-            Bucket=settings.wasabi_document_bucket,
+            Bucket=settings.s3_document_bucket,
             Key=file_key,
             ContentType=request.file_type,
         )
@@ -39,7 +39,7 @@ async def get_upload_url(request: GetUploadUrlRequest):
         url = s3_client.generate_presigned_url(
             "upload_part",
             Params={
-                "Bucket": settings.wasabi_document_bucket,
+                "Bucket": settings.s3_document_bucket,
                 "Key": request.file_key,
                 "UploadId": request.upload_id,
                 "PartNumber": request.part_number,
@@ -60,7 +60,7 @@ async def complete_multipart_upload(
 ):
     try:
         s3_client.complete_multipart_upload(
-            Bucket=settings.wasabi_document_bucket,
+            Bucket=settings.s3_document_bucket,
             Key=request.file_key,
             UploadId=upload_id,
             MultipartUpload={"Parts": request.parts},

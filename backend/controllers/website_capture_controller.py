@@ -11,7 +11,9 @@ router = APIRouter()
 async def capture_website_endpoint(request: WebsiteCaptureRequest):
     try:
         # Huey decorated tasks return a results object, which confuses the type checker: https://huey.readthedocs.io/en/latest/api.html#Result
-        capture_website(request.url, request.document_upload_id)
+        print("About to capture website: ", request.url," , ", request.document_upload_id)
+        task = capture_website(request.url, request.document_upload_id)
+        print("Task: ", task)
         return WebsiteCaptureResponse(
             url=request.url, document_upload_id=request.document_upload_id
         )
