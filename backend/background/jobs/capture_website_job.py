@@ -10,10 +10,9 @@ import json
 from urllib.parse import urljoin, urlparse
 import os
 import mimetypes
-from concurrent.futures import ThreadPoolExecutor
 from config.huey import huey
 from config.s3 import s3_client
-from config.environment import WasabiSettings, MongoSettings
+from config.environment import S3Settings, MongoSettings
 from config.redis import Redis, RedisType
 from config.mongo import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
 from db.models.document_uploads import (
@@ -37,12 +36,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create a thread pool
-thread_pool = ThreadPoolExecutor(max_workers=10)  # Adjust max_workers as needed
-
 # S3 configuration
-wasabi_settings = WasabiSettings()
-S3_HOST = wasabi_settings.s3_host
+s3_settings = S3Settings()
+S3_HOST = s3_settings.s3_host
 
 PUBLIC_BUCKET = AllowedS3Buckets.PUBLIC_BUCKET.value
 DOCUMENT_UPLOAD_BUCKET = AllowedS3Buckets.DOCUMENT_UPLOADS.value

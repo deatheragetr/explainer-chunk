@@ -2,13 +2,13 @@ from typing import TypedDict, Annotated, Literal, Optional, Union
 from api.utils.url_friendly import make_url_friendly
 from bson import ObjectId
 from enum import Enum
-from config.environment import WasabiSettings
+from config.environment import S3Settings
 
-settings = WasabiSettings()
+settings = S3Settings()
 
 
 class AllowedS3Buckets(str, Enum):
-    DOCUMENT_UPLOADS = settings.wasabi_document_bucket
+    DOCUMENT_UPLOADS = settings.s3_document_bucket
     PUBLIC_BUCKET = settings.s3_public_bucket
 
 
