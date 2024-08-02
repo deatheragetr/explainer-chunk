@@ -1,5 +1,5 @@
 from redis.asyncio import Redis
-from typing import cast
+from typing import TYPE_CHECKING
 
 # Get a runtime error on start up:
 # raise TypeError(f"{cls} is not a generic class")
@@ -8,4 +8,15 @@ from typing import cast
 host = "localhost"
 port = 6379
 db = 0
-redis_client = cast("Redis[bytes]", Redis(host=host, port=port, db=db))
+
+# Redis Types are a little screwy: https://github.com/python/typeshed/issues/8242
+# Maybe fixed in the future :shrug:
+if TYPE_CHECKING:
+    RedisType = Redis[bytes]
+else:
+    RedisType = Redis
+
+redis_client = Redis(host=host, port=port, db=db)
+
+
+

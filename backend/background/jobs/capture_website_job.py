@@ -1,15 +1,21 @@
 import asyncio
-from typing import List, TypedDict, Optional, Annotated
+from typing import List, TypedDict, Optional, Annotated, AsyncGenerator, Any
 import aiohttp
 from bson import ObjectId
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
 import logging
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from contextlib import asynccontextmanager
+import json
+from urllib.parse import urljoin, urlparse
+import os
+import mimetypes
+from concurrent.futures import ThreadPoolExecutor
+from config.huey import huey
 from config.s3 import s3_client
 from config.environment import WasabiSettings, MongoSettings
-from config.redis import Redis
+from config.redis import Redis, RedisType
+from config.mongo import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
 from db.models.document_uploads import (
     MongoDocumentUpload,
     create_mongo_file_details,
@@ -20,14 +26,7 @@ from db.models.document_uploads import (
     AllowedS3Buckets,
     SourceType,
 )
-import json
-from urllib.parse import urljoin, urlparse
-import os
-import mimetypes
-from concurrent.futures import ThreadPoolExecutor
-import functools
 
-from huey import RedisHuey
 
 # Set up logging
 logging.basicConfig(
@@ -36,9 +35,6 @@ logging.basicConfig(
     filename="capture_website.log",
 )
 logger = logging.getLogger(__name__)
-
-# Initialize Huey with async mode
-huey = RedisHuey('explainer-chonk', host="localhost", port=6379, db=0)
 
 # Create a thread pool
 thread_pool = ThreadPoolExecutor(max_workers=10)  # Adjust max_workers as needed
@@ -84,10 +80,10 @@ async def get_redis_client():
         await client.close()
 
 @asynccontextmanager
-async def get_mongo_client(collection_name: str):
+async def get_mongo_client(collection_name: str) -> AsyncGenerator[AsyncIOMotorCollection[MongoDocumentUpload], None]:
     mongo_settings = MongoSettings()
-    client = AsyncIOMotorClient(mongo_settings.mongo_url)
-    db = client[mongo_settings.mongo_db]
+    client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(mongo_settings.mongo_url)
+    db: AsyncIOMotorDatabase[MongoDocumentUpload] = client[mongo_settings.mongo_db]
     try:
         yield db[collection_name]
     finally:
@@ -131,15 +127,19 @@ async def fetch_and_store_resource(
         logger.error(f"Error fetching resource {url}: {str(e)}")
         return None
 
+
+# RedisType = Union[Redis, 'Redis[bytes]']
+
+
+
 async def update_progress(
-    redis_client: Redis,
+    redis_client: RedisType,
     document_upload_id: str,
     status: str,
     progress: Optional[float] = None,
     payload: Optional[ProgressData] = None,
 ):
 
-    print(f"Updating progress: {status}, {progress}, {payload}")
     await redis_client.publish(
         "capture_website_task",
         json.dumps(
@@ -153,9 +153,9 @@ async def update_progress(
     )
 
 async def capture_html(
-    redis_client: Redis,
+    redis_client: RedisType,
     session: ClientSession,
-    mongo_collection: AsyncIOMotorCollection,
+    mongo_collection: AsyncIOMotorCollection[MongoDocumentUpload],
     url: str,
     response: aiohttp.ClientResponse,
     document_upload_id: str,
@@ -224,7 +224,7 @@ async def capture_html(
             ExpiresIn=3600,
         )
 
-        s3_url = generate_s3_url(S3_HOST, DOCUMENT_UPLOAD_BUCKET, html_key)
+        s3_url = generate_s3_url(S3_HOST, AllowedS3Buckets.DOCUMENT_UPLOADS, html_key)
         mongo_file_details = create_mongo_file_details(
             file_name="index.html",
             file_type=supported_file_types["html"],
@@ -271,9 +271,9 @@ async def capture_html(
         raise
 
 async def capture_non_html(
-    redis_client: Redis,
+    redis_client: RedisType,
     session: ClientSession,
-    mongo_collection: AsyncIOMotorCollection,
+    mongo_collection: AsyncIOMotorCollection[MongoDocumentUpload],
     url: str,
     response: aiohttp.ClientResponse,
     document_upload_id: str,
@@ -350,6 +350,7 @@ async def capture_non_html(
 
     except Exception as e:
         await update_progress(redis_client, document_upload_id, "ERROR")
+        logger.error(e)
         logger.error(f"Direct download failed for URL: {url}, Task ID: {document_upload_id}")
         logger.exception("Exception details:")
         raise
@@ -418,20 +419,13 @@ async def async_capture(url: str, document_upload_id: str):
             logger.exception("Exception details:")
             return {"status": "Error", "message": str(e)}
 
-def run_in_thread_pool(func):
-    @functools.wraps(func)
-    async def wrapper(*args, **kwargs):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(thread_pool, func, *args, **kwargs)
-    return wrapper
-
 @huey.task()
 def capture_website(url: str, document_upload_id: str):
     logger.info(f"Starting capture_website task: URL={url}, ID={document_upload_id}")
     try:
         asyncio.run(async_capture(url, document_upload_id))
         logger.info(f"Finished capture_website task: URL={url}, ID={document_upload_id}")
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error in capture_website task: URL={url}, ID={document_upload_id}")
         raise  # Re-raise the exception so Huey marks the task as failed
 
