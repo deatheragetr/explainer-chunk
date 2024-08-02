@@ -25,6 +25,7 @@ from db.models.document_uploads import (
     AllowedFolders,
     AllowedS3Buckets,
     SourceType,
+    S3Bucket
 )
 
 
@@ -43,6 +44,7 @@ thread_pool = ThreadPoolExecutor(max_workers=10)  # Adjust max_workers as needed
 wasabi_settings = WasabiSettings()
 S3_HOST = wasabi_settings.s3_host
 
+PUBLIC_BUCKET = AllowedS3Buckets.PUBLIC_BUCKET.value
 DOCUMENT_UPLOAD_BUCKET = AllowedS3Buckets.DOCUMENT_UPLOADS.value
 WEB_CAPTURES_FOLDER = AllowedFolders.WEB_CAPTURES.value
 DOCUMENT_UPLOADS_FOLDER = AllowedFolders.DOCUMENT_UPLOADS.value
@@ -90,7 +92,7 @@ async def get_mongo_client(collection_name: str) -> AsyncGenerator[AsyncIOMotorC
         client.close()
 
 async def fetch_and_store_resource(
-    session: ClientSession, url: str, base_url: str, document_upload_id: str
+    session: ClientSession, url: str, base_url: str, document_upload_id: str, bucket: S3Bucket
 ):
     try:
         full_url = urljoin(base_url, url)
@@ -110,19 +112,14 @@ async def fetch_and_store_resource(
             file_name=file_name,
         )
         s3_client.put_object(
-            Bucket=DOCUMENT_UPLOAD_BUCKET,
+            Bucket=bucket.value,
             Key=s3_key,
             Body=content,
             ContentType=content_type,
         )
 
-        presigned_url = s3_client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": DOCUMENT_UPLOAD_BUCKET, "Key": s3_key},
-            ExpiresIn=3600,
-        )
-
-        return presigned_url
+        s3_url = generate_s3_url(S3_HOST, bucket, s3_key)
+        return s3_url
     except Exception as e:
         logger.error(f"Error fetching resource {url}: {str(e)}")
         return None
@@ -170,7 +167,7 @@ async def capture_html(
         for tag in soup.find_all("link", rel="stylesheet"):
             if tag.has_attr("href"):
                 task = asyncio.create_task(
-                    fetch_and_store_resource(session, tag["href"], url, document_upload_id)
+                    fetch_and_store_resource(session, tag["href"], url, document_upload_id, AllowedS3Buckets.PUBLIC_BUCKET)
                 )
                 css_tasks.append(task)
         css_results = await asyncio.gather(*css_tasks)
@@ -183,7 +180,7 @@ async def capture_html(
         js_tasks: List[asyncio.Task[Optional[str]]] = []
         for tag in soup.find_all("script", src=True):
             task = asyncio.create_task(
-                fetch_and_store_resource(session, tag["src"], url, document_upload_id)
+                fetch_and_store_resource(session, tag["src"], url, document_upload_id, AllowedS3Buckets.PUBLIC_BUCKET)
             )
             js_tasks.append(task)
         js_results = await asyncio.gather(*js_tasks)
@@ -196,7 +193,7 @@ async def capture_html(
         img_tasks: List[asyncio.Task[Optional[str]]] = []
         for tag in soup.find_all("img", src=True):
             task = asyncio.create_task(
-                fetch_and_store_resource(session, tag["src"], url, document_upload_id)
+                fetch_and_store_resource(session, tag["src"], url, document_upload_id, AllowedS3Buckets.PUBLIC_BUCKET)
             )
             img_tasks.append(task)
         img_results = await asyncio.gather(*img_tasks)
@@ -212,25 +209,19 @@ async def capture_html(
             file_name="index.html",
         )
         s3_client.put_object(
-            Bucket=DOCUMENT_UPLOAD_BUCKET,
+            Bucket=PUBLIC_BUCKET,
             Key=html_key,
             Body=str(soup),
             ContentType="text/html",
         )
 
-        capture_url: str = s3_client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": DOCUMENT_UPLOAD_BUCKET, "Key": html_key},
-            ExpiresIn=3600,
-        )
-
-        s3_url = generate_s3_url(S3_HOST, AllowedS3Buckets.DOCUMENT_UPLOADS, html_key)
+        s3_url = generate_s3_url(S3_HOST, AllowedS3Buckets.PUBLIC_BUCKET, html_key)
         mongo_file_details = create_mongo_file_details(
             file_name="index.html",
             file_type=supported_file_types["html"],
             file_key=html_key,
             s3_url=s3_url,
-            s3_bucket=DOCUMENT_UPLOAD_BUCKET,
+            s3_bucket=PUBLIC_BUCKET,
             source=SourceType.WEB,
             source_url=url,
         )
@@ -251,7 +242,7 @@ async def capture_html(
             "COMPLETE",
             100,
             ProgressData(
-                presigned_url=capture_url,
+                presigned_url=s3_url,
                 file_type=supported_file_types["html"],
                 file_name="index.html",
                 document_upload_id=document_upload_id,
@@ -260,7 +251,7 @@ async def capture_html(
         )
         return {
             "status": "Website captured successfully",
-            "presigned_url": capture_url,
+            "presigned_url": s3_url,
         }
 
     except Exception as e:
@@ -340,6 +331,8 @@ async def capture_non_html(
                 presigned_url=capture_url,
                 file_type=normalized_file_type,
                 file_name=file_name,
+                document_upload_id=document_upload_id,
+                url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
             ),
         )
 

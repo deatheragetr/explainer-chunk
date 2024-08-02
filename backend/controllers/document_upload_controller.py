@@ -103,16 +103,20 @@ async def get_document(document_id: str):
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        # Generate pre-signed URL
         try:
-            presigned_url = s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": document["file_details"]["s3_bucket"],
-                    "Key": document["file_details"]["file_key"],
-                },
-                ExpiresIn=3600,
-            )  # URL expires in 1 hour
+            if document["file_details"]["s3_bucket"] == AllowedS3Buckets.PUBLIC_BUCKET.value:
+                # Web captures are public, so no need to generate pre-signed URL
+                presigned_url = document["file_details"]["s3_url"]
+            else:
+                # Generate pre-signed URL 
+                presigned_url = s3_client.generate_presigned_url(
+                    "get_object",
+                    Params={
+                        "Bucket": document["file_details"]["s3_bucket"],
+                        "Key": document["file_details"]["file_key"],
+                    },
+                    ExpiresIn=3600,
+                )  # URL expires in 1 hour
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error generating pre-signed URL: {str(e)}"
