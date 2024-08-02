@@ -66,7 +66,7 @@ def generate_s3_key_for_web_capture(
 
 
 def generate_s3_url(s3_host: str, s3_bucket: S3Bucket, file_key: str) -> str:
-    return f"{s3_host}/{s3_bucket}/{file_key}"
+    return f"https://{s3_bucket}.{s3_host}/{file_key}"
 
 
 def create_mongo_file_details(

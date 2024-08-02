@@ -1,15 +1,15 @@
+import asyncio
 from typing import List, TypedDict, Optional, Annotated
 import aiohttp
 from bson import ObjectId
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
 import logging
-from motor.motor_asyncio import AsyncIOMotorCollection
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from contextlib import asynccontextmanager
 from config.s3 import s3_client
-from config.environment import WasabiSettings
-from config.redis import host as redis_host, port as redis_port, db as redis_db, Redis
-from config.mongo import db
+from config.environment import WasabiSettings, MongoSettings
+from config.redis import Redis
 from db.models.document_uploads import (
     MongoDocumentUpload,
     create_mongo_file_details,
@@ -21,12 +21,13 @@ from db.models.document_uploads import (
     SourceType,
 )
 import json
-import asyncio
 from urllib.parse import urljoin, urlparse
 import os
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
+import functools
 
-from config.huey import huey
+from huey import RedisHuey
 
 # Set up logging
 logging.basicConfig(
@@ -36,15 +37,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize Huey with async mode
+huey = RedisHuey('explainer-chonk', host="localhost", port=6379, db=0)
+
+# Create a thread pool
+thread_pool = ThreadPoolExecutor(max_workers=10)  # Adjust max_workers as needed
 
 # S3 configuration
-wasabiSettings = WasabiSettings()
-S3_HOST = wasabiSettings.wasabi_endpoint_url
+wasabi_settings = WasabiSettings()
+S3_HOST = wasabi_settings.s3_host
 
-DOCUMENT_UPLOAD_BUCKET = AllowedS3Buckets.DOCUMENT_UPLOADS
-WEB_CAPTURES_FOLDER = AllowedFolders.WEB_CAPTURES
-DOCUMENT_UPLOADS_FOLDER = AllowedFolders.DOCUMENT_UPLOADS
-
+DOCUMENT_UPLOAD_BUCKET = AllowedS3Buckets.DOCUMENT_UPLOADS.value
+WEB_CAPTURES_FOLDER = AllowedFolders.WEB_CAPTURES.value
+DOCUMENT_UPLOADS_FOLDER = AllowedFolders.DOCUMENT_UPLOADS.value
 
 # Status update stream data
 class ProgressData(TypedDict, total=False):
@@ -52,10 +57,7 @@ class ProgressData(TypedDict, total=False):
     file_type: Annotated[Optional[str], "File Type"]
     file_name: Annotated[Optional[str], "File Name"]
     document_upload_id: Annotated[Optional[str], "Document Upload ID"]
-    url_friendly_file_name: Annotated[
-        Optional[str], "URL-friendly version of the file name"
-    ]
-
+    url_friendly_file_name: Annotated[Optional[str], "URL-friendly version of the file name"]
 
 supported_file_types = {
     "pdf": "application/pdf",
@@ -68,6 +70,28 @@ supported_file_types = {
     "html": "text/html",
 }
 
+@asynccontextmanager
+async def get_session():
+    async with ClientSession() as session:
+        yield session
+
+@asynccontextmanager
+async def get_redis_client():
+    client = Redis(host="localhost", port=6379, db=0)
+    try:
+        yield client
+    finally:
+        await client.close()
+
+@asynccontextmanager
+async def get_mongo_client(collection_name: str):
+    mongo_settings = MongoSettings()
+    client = AsyncIOMotorClient(mongo_settings.mongo_url)
+    db = client[mongo_settings.mongo_db]
+    try:
+        yield db[collection_name]
+    finally:
+        client.close()
 
 async def fetch_and_store_resource(
     session: ClientSession, url: str, base_url: str, document_upload_id: str
@@ -85,7 +109,7 @@ async def fetch_and_store_resource(
         ).split(";")[0]
 
         s3_key = generate_s3_key_for_web_capture(
-            folder=WEB_CAPTURES_FOLDER,
+            folder=AllowedFolders.WEB_CAPTURES,
             object_id=ObjectId(document_upload_id),
             file_name=file_name,
         )
@@ -104,19 +128,18 @@ async def fetch_and_store_resource(
 
         return presigned_url
     except Exception as e:
-        print(f"Error fetching resource {url}: {str(e)}")
         logger.error(f"Error fetching resource {url}: {str(e)}")
-
         return None
 
-
 async def update_progress(
-    redis_client: Redis,  # type: Redis[bytes]
+    redis_client: Redis,
     document_upload_id: str,
     status: str,
     progress: Optional[float] = None,
-    payload: Optional[ProgressData] = ProgressData(),
+    payload: Optional[ProgressData] = None,
 ):
+
+    print(f"Updating progress: {status}, {progress}, {payload}")
     await redis_client.publish(
         "capture_website_task",
         json.dumps(
@@ -124,49 +147,30 @@ async def update_progress(
                 "connection_id": document_upload_id,
                 "status": status,
                 "progress": progress,
-                "payload": payload,
+                "payload": payload or {},
             }
         ),
     )
 
-
-@asynccontextmanager
-async def get_session():
-    async with ClientSession() as session:
-        yield session
-
-
-@asynccontextmanager
-async def get_redis_client():
-    client = Redis(host=redis_host, port=redis_port, db=redis_db)
-    try:
-        yield client
-    finally:
-        await client.close()
-
-
 async def capture_html(
-    redis_client: Redis,  # type: Redis[bytes]
+    redis_client: Redis,
     session: ClientSession,
+    mongo_collection: AsyncIOMotorCollection,
     url: str,
     response: aiohttp.ClientResponse,
     document_upload_id: str,
 ):
     try:
         html_content = await response.text()
-
         soup = BeautifulSoup(html_content, "html.parser")
 
         # Process CSS files
         await update_progress(redis_client, document_upload_id, "PROGRESS", 30)
-        css_tasks: List[asyncio.Task[str | None]] = []
-
+        css_tasks: List[asyncio.Task[Optional[str]]] = []
         for tag in soup.find_all("link", rel="stylesheet"):
             if tag.has_attr("href"):
                 task = asyncio.create_task(
-                    fetch_and_store_resource(
-                        session, tag["href"], url, document_upload_id
-                    )
+                    fetch_and_store_resource(session, tag["href"], url, document_upload_id)
                 )
                 css_tasks.append(task)
         css_results = await asyncio.gather(*css_tasks)
@@ -176,8 +180,7 @@ async def capture_html(
 
         # Process JavaScript files
         await update_progress(redis_client, document_upload_id, "PROGRESS", 50)
-        js_tasks: List[asyncio.Task[str | None]] = []
-
+        js_tasks: List[asyncio.Task[Optional[str]]] = []
         for tag in soup.find_all("script", src=True):
             task = asyncio.create_task(
                 fetch_and_store_resource(session, tag["src"], url, document_upload_id)
@@ -190,8 +193,7 @@ async def capture_html(
 
         # Process images
         await update_progress(redis_client, document_upload_id, "PROGRESS", 70)
-        img_tasks: List[asyncio.Task[str | None]] = []
-
+        img_tasks: List[asyncio.Task[Optional[str]]] = []
         for tag in soup.find_all("img", src=True):
             task = asyncio.create_task(
                 fetch_and_store_resource(session, tag["src"], url, document_upload_id)
@@ -205,7 +207,7 @@ async def capture_html(
         # Store the modified HTML
         await update_progress(redis_client, document_upload_id, "PROGRESS", 90)
         html_key = generate_s3_key_for_web_capture(
-            folder=WEB_CAPTURES_FOLDER,
+            folder=AllowedFolders.WEB_CAPTURES,
             object_id=ObjectId(document_upload_id),
             file_name="index.html",
         )
@@ -237,9 +239,7 @@ async def capture_html(
             _id=ObjectId(document_upload_id), file_details=mongo_file_details
         )
 
-        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
-
-        await collection.update_one(
+        await mongo_collection.update_one(
             {"_id": ObjectId(document_upload_id)},
             {"$set": document},
             upsert=True,
@@ -255,9 +255,7 @@ async def capture_html(
                 file_type=supported_file_types["html"],
                 file_name="index.html",
                 document_upload_id=document_upload_id,
-                url_friendly_file_name=document["file_details"][
-                    "url_friendly_file_name"
-                ],
+                url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
             ),
         )
         return {
@@ -269,12 +267,13 @@ async def capture_html(
         await update_progress(redis_client, document_upload_id, "ERROR")
         logger.error(f"Task failed for URL: {url}, Task ID: {document_upload_id}")
         logger.error(e)
-        logger.error("Exception details:", exc_info=True)
-
+        logger.exception("Exception details:")
+        raise
 
 async def capture_non_html(
     redis_client: Redis,
     session: ClientSession,
+    mongo_collection: AsyncIOMotorCollection,
     url: str,
     response: aiohttp.ClientResponse,
     document_upload_id: str,
@@ -289,7 +288,7 @@ async def capture_non_html(
         file_name = os.path.basename(urlparse(url).path) or "downloaded_file"
 
         s3_key = generate_s3_key_for_file(
-            folder=DOCUMENT_UPLOADS_FOLDER,
+            folder=AllowedFolders.DOCUMENT_UPLOADS,
             object_id=ObjectId(document_upload_id),
             file_name=file_name,
         )
@@ -309,7 +308,7 @@ async def capture_non_html(
             ExpiresIn=3600,
         )
 
-        s3_url = generate_s3_url(S3_HOST, DOCUMENT_UPLOAD_BUCKET, s3_key)
+        s3_url = generate_s3_url(S3_HOST, AllowedS3Buckets.DOCUMENT_UPLOADS, s3_key)
 
         await update_progress(redis_client, document_upload_id, "PROGRESS", 85)
         mongo_file_details = create_mongo_file_details(
@@ -326,9 +325,7 @@ async def capture_non_html(
             _id=ObjectId(document_upload_id), file_details=mongo_file_details
         )
 
-        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
-
-        await collection.update_one(
+        await mongo_collection.update_one(
             {"_id": ObjectId(document_upload_id)},
             {"$set": document},
             upsert=True,
@@ -353,82 +350,55 @@ async def capture_non_html(
 
     except Exception as e:
         await update_progress(redis_client, document_upload_id, "ERROR")
-        logger.error(
-            f"Direct download failed for URL: {url}, Task ID: {document_upload_id}"
-        )
-        logger.error("Exception details:", exc_info=True)
-        return {"status": "Error", "message": str(e)}
-
+        logger.error(f"Direct download failed for URL: {url}, Task ID: {document_upload_id}")
+        logger.exception("Exception details:")
+        raise
 
 def normalize_file_type(content_type: str, file_extension: str) -> str:
-    # Remove any parameters from the content type (e.g., charset)
     content_type = content_type.split(";")[0].lower()
-
-    # Mapping of content types and file extensions to normalized types
-
     type_mapping = {
-        # PDF
         "application/pdf": supported_file_types["pdf"],
         ".pdf": supported_file_types["pdf"],
-        # EPUB
         "application/epub+zip": supported_file_types["epub"],
         ".epub": supported_file_types["epub"],
-        # JSON
         "application/json": supported_file_types["json"],
         ".json": supported_file_types["json"],
-        # Markdown
         "text/markdown": supported_file_types["markdown"],
         ".md": supported_file_types["markdown"],
         ".markdown": supported_file_types["markdown"],
-        # Plain text
         "text/plain": supported_file_types["text"],
         ".txt": supported_file_types["text"],
-        # Excel/csv
         "text/csv": supported_file_types["csv"],
         ".csv": supported_file_types["csv"],
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": supported_file_types[
-            "excel"
-        ],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": supported_file_types["excel"],
         ".xlsx": supported_file_types["excel"],
-        # HTML (for completeness)
         "text/html": supported_file_types["html"],
         ".html": supported_file_types["html"],
         ".htm": supported_file_types["html"],
     }
-
-    # Try to match content type first, then file extension
-    normalized_type = type_mapping.get(content_type) or type_mapping.get(
-        file_extension.lower()
-    )
-
-    # If no match found, return 'unknown'
-    return normalized_type or "unknown"
-
+    return type_mapping.get(content_type) or type_mapping.get(file_extension.lower()) or "unknown"
 
 async def async_capture(url: str, document_upload_id: str):
-    async with get_redis_client() as redis_client, get_session() as session:
+    async with get_redis_client() as redis_client, get_session() as session, get_mongo_client("document_uploads") as mongo_collection:
         try:
             await update_progress(redis_client, document_upload_id, "STARTED")
-
-            # Fetch main HTML
             await update_progress(redis_client, document_upload_id, "PROGRESS", 10)
+            
             async with session.get(url) as response:
-
-                content_type = (
-                    response.headers.get("content-type", "").split(";")[0].lower()
-                )
+                content_type = response.headers.get("content-type", "").split(";")[0].lower()
                 file_extension = mimetypes.guess_extension(content_type) or ""
 
                 normalized_type = normalize_file_type(content_type, file_extension)
 
                 if normalized_type == supported_file_types["html"]:
                     result = await capture_html(
-                        redis_client, session, url, response, document_upload_id
+                        redis_client, session, mongo_collection, url, response, document_upload_id
                     )
                 elif normalized_type in supported_file_types.values():
                     result = await capture_non_html(
                         redis_client,
                         session,
+                        mongo_collection,
                         url,
                         response,
                         document_upload_id,
@@ -444,14 +414,27 @@ async def async_capture(url: str, document_upload_id: str):
             return result
         except Exception as e:
             await update_progress(redis_client, document_upload_id, "ERROR")
-            print("ERROR: IN CAPTURE WEB SITE: ", str(e))
-            logger.error(
-                f"Async_capture failed for URL: {url}, Task ID: {document_upload_id}"
-            )
-            logger.error("Exception details:", exc_info=True)
+            logger.error(f"Async_capture failed for URL: {url}, Task ID: {document_upload_id}")
+            logger.exception("Exception details:")
             return {"status": "Error", "message": str(e)}
 
+def run_in_thread_pool(func):
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(thread_pool, func, *args, **kwargs)
+    return wrapper
 
 @huey.task()
 def capture_website(url: str, document_upload_id: str):
-    return asyncio.run(async_capture(url, document_upload_id))
+    logger.info(f"Starting capture_website task: URL={url}, ID={document_upload_id}")
+    try:
+        asyncio.run(async_capture(url, document_upload_id))
+        logger.info(f"Finished capture_website task: URL={url}, ID={document_upload_id}")
+    except Exception as e:
+        logger.exception(f"Error in capture_website task: URL={url}, ID={document_upload_id}")
+        raise  # Re-raise the exception so Huey marks the task as failed
+
+
+# Usage example (not part of the task, just for illustration):
+# result = capture_website(url, document_upload_id)

@@ -45,9 +45,8 @@ async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
     # register file with Wasabi
     try:
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
-        s3_url = f"{wasabiSettings.wasabi_endpoint_url}/{wasabiSettings.wasabi_document_bucket}/{reqBody.file_key}"
         s3_url = generate_s3_url(
-            wasabiSettings.wasabi_endpoint_url,
+            wasabiSettings.s3_host,
             AllowedS3Buckets.DOCUMENT_UPLOADS,
             reqBody.file_key,
         )
