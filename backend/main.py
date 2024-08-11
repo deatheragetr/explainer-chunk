@@ -9,7 +9,7 @@ from controllers import (
 )
 from background import websockets
 from background.websockets import redis_subscriber
-from config.redis import redis_client
+from config.redis import redis_pool
 import asyncio
 
 # From huey's documentation, this is recommended, even though it's not directly used in this file
@@ -20,9 +20,10 @@ from background.jobs.capture_website_job import huey, capture_website  # type: i
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    asyncio.create_task(redis_subscriber())
+    app.state.redis_pool = redis_pool
+    asyncio.create_task(redis_subscriber(app))
     yield
-    await redis_client.close()
+    await app.state.redis_pool.close()
 
 
 app = FastAPI(lifespan=lifespan)

@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from background.jobs.capture_website_job import capture_website
 from api.requests.website_capture import WebsiteCaptureRequest
 from api.responses.website_capture import WebsiteCaptureResponse
-from huey.api import Result
 
 router = APIRouter()
 
