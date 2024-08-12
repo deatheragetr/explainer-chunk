@@ -25,7 +25,6 @@ from config.s3 import s3_client
 s3_settings = S3Settings()
 router = APIRouter()
 
-
 @router.post(
     "/document-uploads/imports", response_model=DocumentUploadImportExternalResponse
 )
@@ -91,7 +90,7 @@ async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()], db:
 
 
 @router.get("/document-uploads/{document_id}", response_model=DocumentRetrieveResponse)
-async def get_document(document_id: str):
+async def get_document(document_id: str, db: TypedAsyncIOMotorDatabase = Depends(get_db)):
     try:
         # Convert string to ObjectId
         obj_id = ObjectId(document_id)
