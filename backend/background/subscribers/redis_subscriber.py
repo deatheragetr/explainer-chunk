@@ -5,7 +5,6 @@ import asyncio
 import json
 from config.redis import RedisType
 from utils.valid_json import is_valid_json
-# from redis.asyncio.client import PubSub
 from services.websocket_manager import WebSocketManager
 
 class PubSub(Protocol):
@@ -29,7 +28,6 @@ async def redis_subscriber(app: FastAPI):
             if message is not None:
                 if (is_valid_json(message["data"])):
                     data = json.loads(message["data"])
-                    print(f"Type of Client Id: {type(data['connection_id'])}")
                     await websocket_manager.send_message(
                         json.dumps(data), data["connection_id"]
                     )

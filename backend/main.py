@@ -11,6 +11,7 @@ from controllers import (
 from services.websocket_manager import WebSocketManager
 from background.subscribers.redis_subscriber import redis_subscriber
 from config.redis import redis_pool
+from config.mongo import mongo_manager
 import asyncio
 
 # From huey's documentation, this is recommended, even though it's not directly used in this file
@@ -23,9 +24,12 @@ from background.huey_jobs.capture_website_job import huey, capture_website  # ty
 async def lifespan(app: FastAPI):
     app.state.redis_pool = redis_pool
     app.state.websocket_manager = WebSocketManager()
+    await mongo_manager.connect()
     asyncio.create_task(redis_subscriber(app))
     yield
     await app.state.redis_pool.close()
+    await mongo_manager.close()
+
 
 
 app = FastAPI(lifespan=lifespan)

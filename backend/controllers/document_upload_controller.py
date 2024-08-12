@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from bson import ObjectId
 from db.models.document_uploads import (
     MongoDocumentUpload,
@@ -16,7 +16,7 @@ from api.responses.document_upload import (
 from api.utils.s3_utils import verify_s3_object
 from typing import Annotated
 from config.environment import S3Settings
-from config.mongo import db
+from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pymongo.results import InsertOneResult
 from pymongo.errors import DuplicateKeyError
@@ -41,7 +41,7 @@ async def upload_document_from_import():
     "/document-uploads/",
     response_model=DocumentUploadResponse,
 )
-async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
+async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()], db: TypedAsyncIOMotorDatabase = Depends(get_db)):
     # register file with S3 and save to MongoDB
     try:
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
