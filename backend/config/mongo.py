@@ -2,7 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, Asyn
 from config.environment import MongoSettings
 from db.models.document_uploads import MongoDocumentUpload
 
-from typing import Optional, TypeVar, Generic, Dict, Any, AsyncIterator
+from typing import Optional, TypeVar, Generic, Dict, Any, AsyncIterator, cast
 
 from contextlib import asynccontextmanager
 from pymongo.server_api import ServerApi
@@ -40,7 +40,7 @@ class MongoManager(Generic[DBType]):
                     server_api=ServerApi('1')
                 )
                 await self.client.server_info()  # Trigger connection to verify it's successful
-                self.db = self.client[self.settings.mongo_db]
+                self.db = cast(TypedAsyncIOMotorDatabase, self.client[self.settings.mongo_db])
                 print("Connected to MongoDB")
             except Exception as e:
                 print(f"Failed to connect to MongoDB: {e}")
@@ -64,7 +64,7 @@ class MongoManager(Generic[DBType]):
             pass  # We're not closing the connection here, as it's managed by the pool
 
 mongo_settings = MongoSettings()
-mongo_manager = MongoManager(mongo_settings)
+mongo_manager = MongoManager[TypedAsyncIOMotorDatabase](mongo_settings)
 
 async def get_db() -> AsyncIterator[TypedAsyncIOMotorDatabase]:
     async with mongo_manager.get_database() as db:
