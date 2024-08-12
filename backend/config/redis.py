@@ -8,7 +8,7 @@ db = 0
 # Redis Types are a little screwy: https://github.com/python/typeshed/issues/8242
 # Maybe fixed in the future :shrug:
 if TYPE_CHECKING:
-    RedisType = Redis[bytes]
+    RedisType = Redis[str]
 else:
     RedisType = Redis
 

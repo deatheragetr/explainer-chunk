@@ -6,21 +6,23 @@ from controllers import (
     document_upload_controller,
     upload_controller,
     website_capture_controller,
+    websocket_controller
 )
-from background import websockets
-from background.websockets import redis_subscriber
+from services.websocket_manager import WebSocketManager
+from background.subscribers.redis_subscriber import redis_subscriber
 from config.redis import redis_pool
 import asyncio
 
 # From huey's documentation, this is recommended, even though it's not directly used in this file
 # https://huey.readthedocs.io/en/latest/imports.html#suggested-organization-of-code
 # from huey import huey  # type: ignore
-from background.jobs.capture_website_job import huey, capture_website  # type: ignore
+from background.huey_jobs.capture_website_job import huey, capture_website  # type: ignore
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis_pool = redis_pool
+    app.state.websocket_manager = WebSocketManager()
     asyncio.create_task(redis_subscriber(app))
     yield
     await app.state.redis_pool.close()
@@ -37,8 +39,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Dependency
+def get_websocket_manager():
+    return app.state.websocket_manager
 
-app.include_router(websockets.router)
+# Override the WebSocketManager dependency in the router
+app.dependency_overrides[WebSocketManager] = get_websocket_manager
+
+app.include_router(websocket_controller.router)
 app.include_router(website_capture_controller.router)
 app.include_router(upload_controller.router)
 app.include_router(document_upload_controller.router)
