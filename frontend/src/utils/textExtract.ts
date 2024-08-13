@@ -6,6 +6,7 @@ import * as mammoth from 'mammoth'
 import type { Ref } from 'vue'
 import type { ImportProgress, ExtractionResult } from '@/types'
 import type Spine from 'epubjs/types/spine'
+import { createProgressUpdater, type ProgressUpdater } from '@/utils/progressUpdater'
 
 // Copied over to the /public directory from node_modules :shrug:
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs-dist/build/pdf.worker.min.mjs'
@@ -17,27 +18,12 @@ class UnsupportedFileTypeError extends Error {
   }
 }
 
-type ProgressUpdater = (
-  status: string,
-  progress: number,
-  payload?: Partial<ImportProgress['payload']>
-) => void
-
 async function extractTextFromFile(
   file: File,
   fileType: string,
   importProgress: Ref<ImportProgress | null>
 ): Promise<ExtractionResult> {
-  const updateProgress: ProgressUpdater = (status, progress, payload = {}) => {
-    if (importProgress.value) {
-      importProgress.value = {
-        ...importProgress.value,
-        status,
-        progress,
-        payload: { ...importProgress.value.payload, ...payload }
-      }
-    }
-  }
+  const updateProgress = createProgressUpdater(importProgress)
 
   const extractors: Record<
     string,
