@@ -543,11 +543,7 @@ export default defineComponent({
             payload: {}
           }
 
-          const response: UploadResponse = await uploadLargeFile(
-            file,
-            fileType,
-            importProgress.value
-          )
+          const response: UploadResponse = await uploadLargeFile(file, fileType, importProgress)
 
           importProgress.value = {
             status: 'uploaded',
