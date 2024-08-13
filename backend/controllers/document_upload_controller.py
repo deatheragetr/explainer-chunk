@@ -21,6 +21,7 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 from pymongo.results import InsertOneResult
 from pymongo.errors import DuplicateKeyError
 from config.s3 import s3_client
+from background.huey_jobs.process_document_job import process_document
 
 s3_settings = S3Settings()
 router = APIRouter()
@@ -68,7 +69,12 @@ async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()], db:
                 source=SourceType.FILE_UPLOAD,
                 s3_url=s3_url,
             ),
+            extracted_text=reqBody.extracted_text,
+            extracted_metadata=reqBody.extracted_metadata,
         )
+
+        # Kick of background job to process document
+        process_document(input_text=reqBody.extracted_text, document_id=str(doc_id))
 
         try:
             result: InsertOneResult = await collection.insert_one(document)
@@ -97,7 +103,10 @@ async def get_document(document_id: str, db: TypedAsyncIOMotorDatabase = Depends
 
         # Retrieve document from MongoDB
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
-        document = await collection.find_one({"_id": obj_id})
+        # Avoid fetching the entire document, with the potentially long extracted text
+        document = await collection.find_one({"_id": obj_id}, {"_id": 1, "file_details": 1})
+
+        print("DOCUMENT: ", document)
 
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")

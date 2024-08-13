@@ -20,6 +20,7 @@ import asyncio
 # https://huey.readthedocs.io/en/latest/imports.html#suggested-organization-of-code
 # from huey import huey  # type: ignore
 from background.huey_jobs.capture_website_job import huey, capture_website  # type: ignore
+from background.huey_jobs.process_document_job import process_document  # type: ignore
 
 
 # Set up logging

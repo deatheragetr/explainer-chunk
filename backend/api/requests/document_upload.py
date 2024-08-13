@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Annotated
+from typing import Annotated, Dict, Any
 import re
 from bson import ObjectId
 
@@ -18,6 +18,9 @@ class DocumentUploadRequest(BaseModel):
     file_name: Annotated[str, "Name of file"]
     file_type: Annotated[str, "MIME type of file, e.g, application/pdf"]
     file_key: FileKeyField
+    extracted_text: Annotated[str, "Extracted text from the document"]
+    extracted_metadata: Annotated[Dict[str, Any], "Extracted metadata from the document"]
+
 
     # Redundant?
     @field_validator("file_key")

@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, Literal, Optional, Union
+from typing import TypedDict, Annotated, Literal, Optional, Union, Dict, Any
 from api.utils.url_friendly import make_url_friendly
 from bson import ObjectId
 from enum import Enum
@@ -50,6 +50,8 @@ MongoFileDetails = Union[MongoFileDetailsWeb, MongoFileDetailsUpload]
 class MongoDocumentUpload(TypedDict):
     _id: Annotated[ObjectId, "MongoDB ObjectId"]
     file_details: Annotated[MongoFileDetails, "Details of the uploaded file"]
+    extracted_text: Optional[Annotated[str, "Extracted text content from the document"]]
+    extracted_metadata: Optional[Annotated[Dict[str, Any], "Extracted metadata (e.g., author, title) from the document"]]
 
 
 def generate_s3_key_for_file(
