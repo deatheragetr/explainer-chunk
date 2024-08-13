@@ -144,7 +144,7 @@ export async function uploadLargeFile(
 
   await completeMultipartUpload(uploadId, fileKey, parts)
 
-  const result: ExtractionResult = await extractTextFromFile(file, importProgress)
+  const result: ExtractionResult = await extractTextFromFile(file, fileType, importProgress)
   console.log('Extracted text:', result.text)
   console.log('Metadata:', result.metadata)
 

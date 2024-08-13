@@ -7,6 +7,9 @@ import type { Ref } from 'vue'
 import type { ImportProgress, ExtractionResult } from '@/types'
 import type Spine from 'epubjs/types/spine'
 
+// Copied over to the /public directory from node_modules :shrug:
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs-dist/build/pdf.worker.min.mjs'
+
 class UnsupportedFileTypeError extends Error {
   constructor(fileType: string) {
     super(`Unsupported file type: ${fileType}`)
@@ -22,9 +25,9 @@ type ProgressUpdater = (
 
 async function extractTextFromFile(
   file: File,
+  fileType: string,
   importProgress: Ref<ImportProgress | null>
 ): Promise<ExtractionResult> {
-  const fileType = file.type
   const updateProgress: ProgressUpdater = (status, progress, payload = {}) => {
     if (importProgress.value) {
       importProgress.value = {
