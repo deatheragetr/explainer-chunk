@@ -30,6 +30,8 @@ class AISummaryService:
         self.pinecone_client = Pinecone(api_key=pinecone_api_key)
         self.index_name = model_pair_config['pinecone']['index_name']
         self.ensure_pinecone_index()
+        self.semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent API calls
+
 
     def ensure_pinecone_index(self):
         if self.index_name not in self.pinecone_client.list_indexes().names():
@@ -61,10 +63,6 @@ class AISummaryService:
             for match in results["matches"]
         ]
 
-
-    async def semantic_search(self, query: str, document_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        return await self.query_similar_chunks(query=query, document_id=document_id, top_k=top_k)
-
     async def get_document_chunks(self, document_id: str, top_k: int = 10) -> List[Dict[str, Any]]:
         # Retrieve all chunks for the document, sorted by chunk_index
         results = await asyncio.to_thread(
@@ -85,6 +83,7 @@ class AISummaryService:
         ]
         return sorted(chunks, key=lambda x: x["chunk_index"])
 
+    # REMOVE?
     async def basic_summarize_text(self, document_id: str) -> Dict[str, str]:
         chunks = await self.get_document_chunks(document_id, top_k=10)
         prompt = "Summarize the following document:\n\n"
@@ -106,6 +105,7 @@ class AISummaryService:
 
         return {"summary": summary_content}
 
+    # REMOVE?
     async def recursive_summarize(self, document_id: str) -> Dict[str, str]:
         chunks = await self.get_document_chunks(document_id, top_k=100)
         max_chunk_size = self.model_pair_config['processing']['max_tokens_per_chunk']
@@ -157,15 +157,15 @@ class AISummaryService:
         )
         return response.choices[0].message.content or ""
 
-
     async def most_advanced_summarize(self, document_id: str) -> Dict[str, Any]:
-        chunks = await self.get_document_chunks(document_id, top_k=100)
+        chunks = await self.get_document_chunks(document_id, top_k=50)
         target_length = self.model_pair_config['chat_model']['target_summary_length']
+
         
         async def summarize_with_context(text: str, context: str = "", target_tokens: Optional[int] = None) -> str:
-            prompt = f"Context: {context}\n\nSummarize the following text, maintaining coherence with the context. "
+            prompt = f"Context: {context}\n\nSummarize the following text concisely, maintaining coherence with the context. "
             if target_tokens:
-                prompt += f"Aim for a summary of approximately {target_tokens} tokens."
+                prompt += f"Aim for approximately {target_tokens} tokens."
             
             messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": prompt},
@@ -173,17 +173,23 @@ class AISummaryService:
             ]
             
             return await self._make_api_call(messages, target_tokens or self.model_pair_config['chat_model']['max_output_tokens'])
+        
+        async def rate_limited_summarize(chunk: str, context: str, target_tokens: Optional[int] = None) -> str:
+            async with self.semaphore:
+                return await summarize_with_context(chunk, context, target_tokens)
+
 
         def calculate_importance(texts: List[str]) -> NDArray[np.float64]:
-            vectorizer = TfidfVectorizer()
+            vectorizer = TfidfVectorizer(max_features=1000)  # Limit features for speed
             tfidf_matrix: spmatrix = vectorizer.fit_transform(texts)
             tfidf_array: NDArray[np.float64] = tfidf_matrix.toarray()
-            centroid: NDArray[np.float64] = tfidf_array.mean(axis=0)
-            centroid_2d: NDArray[np.float64] = centroid.reshape(1, -1)
-            similarities: NDArray[np.float64] = cosine_similarity(tfidf_array, centroid_2d)
+            centroid: NDArray[np.float64] = np.mean(tfidf_array, axis=0)
+            similarities: NDArray[np.float64] = cosine_similarity(tfidf_array, centroid.reshape(1, -1))
             return similarities.flatten()
 
         async def adaptive_chunk(texts: List[str]) -> List[Tuple[str, float]]:
+            if not texts:
+                return []
             importances = calculate_importance(texts)
             sorted_chunks = sorted(zip(texts, importances), key=lambda x: x[1], reverse=True)
             
@@ -191,11 +197,11 @@ class AISummaryService:
             current_chunk = ""
             current_tokens = 0
             
-            for text, _importance in sorted_chunks:
+            for text, importance in sorted_chunks:
                 text_tokens = self.embedding_generator.num_tokens_from_string(text)
                 if current_tokens + text_tokens > self.model_pair_config['processing']['max_tokens_per_chunk']:
                     if current_chunk:
-                        result.append((current_chunk, float(np.mean([imp for _, imp in result]))))
+                        result.append((current_chunk, importance))
                     current_chunk = text
                     current_tokens = text_tokens
                 else:
@@ -203,51 +209,45 @@ class AISummaryService:
                     current_tokens += text_tokens
             
             if current_chunk:
-                result.append((current_chunk, float(np.mean([imp for _, imp in result]))))
+                result.append((current_chunk, importances[-1] if importances.size > 0 else 0.0))
             
             return result
 
         # First level of summarization with adaptive chunking
         chunk_texts = [chunk['text'] for chunk in chunks]
         adaptive_chunks = await adaptive_chunk(chunk_texts)
-        
-        batch_size = 5  # Adjust based on rate limits
-        first_level_summaries: List[str] = []
-        for i in range(0, len(adaptive_chunks), batch_size):
-            batch = adaptive_chunks[i:i+batch_size]
-            batch_summaries = await asyncio.gather(
-                *[summarize_with_context(chunk[0], adaptive_chunks[i-1][0] if i > 0 else "")
-                  for i, chunk in enumerate(batch, start=i)]
-            )
-            first_level_summaries.extend(batch_summaries)
-            await asyncio.sleep(1)  # Rate limiting pause between batches
+
+        # Fully parallelized summarization with rate limiting
+        summarization_tasks = [
+            rate_limited_summarize(chunk[0], adaptive_chunks[i-1][0] if i > 0 else "")
+            for i, chunk in enumerate(adaptive_chunks)
+        ]
+        first_level_summaries = await asyncio.gather(*summarization_tasks)
 
         # Determine if we need a second level of summarization
         total_tokens = sum(self.embedding_generator.num_tokens_from_string(summary) for summary in first_level_summaries)
         if total_tokens > target_length:
-            # Calculate target length for each second-level summary
             num_second_level_chunks = max(1, total_tokens // target_length)
             target_chunk_length = target_length // num_second_level_chunks
 
             second_level_chunks = await adaptive_chunk(first_level_summaries)
-            second_level_summaries: List[str] = []
-            for i in range(0, len(second_level_chunks), batch_size):
-                batch = second_level_chunks[i:i+batch_size]
-                batch_summaries = await asyncio.gather(
-                    *[summarize_with_context(chunk[0], second_level_chunks[i-1][0] if i > 0 else "", target_chunk_length)
-                      for i, chunk in enumerate(batch, start=i)]
-                )
-                second_level_summaries.extend(batch_summaries)
-                await asyncio.sleep(1)  # Rate limiting pause between batches
+            summarization_tasks = [
+                rate_limited_summarize(chunk[0], second_level_chunks[i-1][0] if i > 0 else "", target_chunk_length)
+                for i, chunk in enumerate(second_level_chunks)
+            ]
+            second_level_summaries = await asyncio.gather(*summarization_tasks)
             final_summary = "\n\n".join(second_level_summaries)
         else:
             final_summary = "\n\n".join(first_level_summaries)
+
 
         # Final condensation if still too long
         final_summary_tokens = self.embedding_generator.num_tokens_from_string(final_summary)
         if final_summary_tokens > target_length:
             final_summary = await summarize_with_context(final_summary, target_tokens=target_length)
 
+
+        print(final_summary)
         return {
             "summary": final_summary,
             "metadata": {
@@ -258,3 +258,4 @@ class AISummaryService:
                 "model_used": self.model_pair_config['chat_model']['model_name']
             }
         }
+
