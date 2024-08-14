@@ -106,8 +106,6 @@ async def get_document(document_id: str, db: TypedAsyncIOMotorDatabase = Depends
         # Avoid fetching the entire document, with the potentially long extracted text
         document = await collection.find_one({"_id": obj_id}, {"_id": 1, "file_details": 1})
 
-        print("DOCUMENT: ", document)
-
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 
