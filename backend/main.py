@@ -7,9 +7,9 @@ from controllers import (
     document_upload_controller,
     upload_controller,
     website_capture_controller,
-    websocket_controller
+    websocket_controller,
+    ai_controller
 )
-from services.websocket_manager import WebSocketManager
 from background.subscribers.redis_subscriber import RedisSubscriber
 from config.redis import redis_pool, RedisType
 from config.mongo import mongo_manager
@@ -21,6 +21,7 @@ import asyncio
 # from huey import huey  # type: ignore
 from background.huey_jobs.capture_website_job import huey, capture_website  # type: ignore
 from background.huey_jobs.process_document_job import process_document  # type: ignore
+from background.huey_jobs.summarize_document_job import summarize_document  # type: ignore
 
 
 # Set up logging
@@ -52,8 +53,6 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown complete")
 
 
-
-
 app = FastAPI(lifespan=lifespan)
 
 # Add CORS middleware
@@ -69,6 +68,7 @@ app.include_router(websocket_controller.router)
 app.include_router(website_capture_controller.router)
 app.include_router(upload_controller.router)
 app.include_router(document_upload_controller.router)
+app.include_router(ai_controller.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
