@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 else:
     RedisType = Redis
 
+
 class RedisPool:
     def __init__(self):
         self.pool = ConnectionPool(host=host, port=port, db=db)
@@ -24,7 +25,5 @@ class RedisPool:
         await self.client.close()
         await self.pool.disconnect()
 
+
 redis_pool = RedisPool()
-
-
-
