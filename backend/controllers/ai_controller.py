@@ -8,21 +8,29 @@ from background.huey_jobs.summarize_document_job import summarize_document
 
 router = APIRouter()
 
+
 class SummarizeRequest(BaseModel):
     model: str
+
 
 class ExplainRequest(BaseModel):
     highlight_text: str
     model: str
 
+
 class ChatRequest(BaseModel):
     message: str
     model: str
 
-@router.post("/documents/{document_id}/summary")
-async def create_summary(document_id: str, request: SummarizeRequest, db: TypedAsyncIOMotorDatabase = Depends(get_db)):
+
+@router.post("/documents/{document_upload_id}/summary")
+async def create_summary(
+    document_upload_id: str,
+    request: SummarizeRequest,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
     # Convert string to ObjectId
-    obj_id = ObjectId(document_id)
+    obj_id = ObjectId(document_upload_id)
 
     # Retrieve document from MongoDB
     collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
@@ -31,8 +39,9 @@ async def create_summary(document_id: str, request: SummarizeRequest, db: TypedA
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    summarize_document(document_id=document_id, model_name=request.model)
+    summarize_document(document_id=document_upload_id, model_name=request.model)
     return {"message": "Summary task started"}
+
 
 # @router.post("/documents/{document_id}/explanation")
 # async def create_explanation(document_id: str, request: ExplainRequest,

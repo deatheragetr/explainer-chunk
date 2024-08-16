@@ -1,39 +1,56 @@
 import asyncio
 import json
-from typing import Dict, Optional, Any, Protocol, Coroutine
-from config.redis import RedisType
+from typing import Dict, Optional, Any, Coroutine, Protocol, TYPE_CHECKING, Union
+
+from config.redis import Redis
 from utils.valid_json import is_valid_json
 from services.websocket_manager import WebSocketManager
+from config.redis_pubsub_channels import PUBSUB_CONFIG, PubSubChannel
+
 import logging
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+if TYPE_CHECKING:
+    RedisType = Redis[str]
+else:
+    RedisType = Redis
+
+
 class PubSub(Protocol):
     def subscribe(self, *args: str) -> Coroutine[Any, Any, Any]: ...
-    def get_message(self, ignore_subscribe_messages: bool = False) -> Coroutine[Any, Any, Optional[Dict[str, Any]]]: ...
+    def get_message(
+        self, ignore_subscribe_messages: bool = False
+    ) -> Coroutine[Any, Any, Optional[Dict[str, Any]]]: ...
     def unsubscribe(self) -> Coroutine[Any, Any, Any]: ...
+
 
 class RedisSubscriber:
     def __init__(self, redis_client: RedisType, websocket_manager: WebSocketManager):
         self.redis_client = redis_client
         self.websocket_manager = websocket_manager
-        self.pubsub: Optional[PubSub] = None
         self.is_running = False
-        self.task: Optional[asyncio.Task] = None
+        self.task: Optional[asyncio.Task[None]] = None
 
     async def start(self):
-        self.pubsub = self.redis_client.pubsub()
-        await self.pubsub.subscribe("capture_website_task")
+        self.pubsub: PubSub = self.redis_client.pubsub()
+
+        # Subscribe to all channels defined in PUBSUB_CONFIG
+        channels_to_subscribe = [channel.value for channel in PubSubChannel]
+        await self.pubsub.subscribe(*channels_to_subscribe)
+
         self.is_running = True
-        logger.info("Redis subscriber started")
+        logger.info(
+            f"Redis subscriber started and subscribed to channels: {', '.join(channels_to_subscribe)}"
+        )
 
         while self.is_running:
             try:
                 message: Optional[Dict[str, Any]] = await asyncio.wait_for(
-                    self.pubsub.get_message(ignore_subscribe_messages=True),
-                    timeout=1.0
+                    self.pubsub.get_message(ignore_subscribe_messages=True), timeout=1.0
                 )
                 if message is not None:
                     await self.process_message(message)
@@ -51,9 +68,21 @@ class RedisSubscriber:
     async def process_message(self, message: Dict[str, Any]):
         if is_valid_json(message["data"]):
             data = json.loads(message["data"])
-            await self.websocket_manager.send_message(
-                json.dumps(data), data["connection_id"]
-            )
+            channel = message.get("channel", "").decode("utf-8")
+
+            if PUBSUB_CONFIG.is_valid_channel(channel):
+                # channel_enum = PubSubChannel(channel)
+                # payload_type = PUBSUB_CONFIG.get_channel_config(channel_enum)[
+                #     "payload_type"
+                # ]
+
+                # You might want to add additional validation here based on the payload_type
+
+                await self.websocket_manager.send_message(
+                    json.dumps(data), data["connection_id"]
+                )
+            else:
+                logger.warning(f"Received message from unknown channel: {channel}")
 
     async def stop(self):
         logger.info("Stopping Redis subscriber")

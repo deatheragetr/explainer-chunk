@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from scipy.sparse import spmatrix
 
 from config.ai_models import ModelPairConfig
+from utils.progress_updater import ProgressUpdater, SummaryProgressData
 from services.embedding_generator import EmbeddingGenerator
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
@@ -29,6 +30,7 @@ class AISummaryService:
         openai_api_key: str,
         pinecone_api_key: str,
         model_pair_config: ModelPairConfig,
+        progress_updater: ProgressUpdater,
     ):
         self.model_pair_config = model_pair_config
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
@@ -39,6 +41,7 @@ class AISummaryService:
         self.index_name = model_pair_config["pinecone"]["index_name"]
         self.ensure_pinecone_index()
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent API calls
+        self.progress_updater = progress_updater
 
     def ensure_pinecone_index(self):
         if self.index_name not in self.pinecone_client.list_indexes().names():
@@ -286,6 +289,12 @@ class AISummaryService:
             final_summary = await summarize_with_context(
                 final_summary, target_tokens=target_length
             )
+
+        await self.progress_updater.complete(
+            payload=SummaryProgressData(
+                completeText=final_summary,
+            )
+        )
 
         return {
             "summary": final_summary,

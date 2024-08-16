@@ -1,16 +1,12 @@
-from typing import TypedDict, Optional, Annotated, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Union
 import json
 from config.redis import Redis
-
-
-class ProgressData(TypedDict, total=False):
-    presigned_url: Annotated[Optional[str], "S3 Presigned URL"]
-    file_type: Annotated[Optional[str], "File Type"]
-    file_name: Annotated[Optional[str], "File Name"]
-    document_upload_id: Annotated[Optional[str], "Document Upload ID"]
-    url_friendly_file_name: Annotated[
-        Optional[str], "URL-friendly version of the file name"
-    ]
+from config.redis_pubsub_channels import (
+    PubSubChannel,
+    PUBSUB_CONFIG,
+    WebCaptureProgressData,
+    SummaryProgressData,
+)
 
 
 if TYPE_CHECKING:
@@ -20,18 +16,29 @@ else:
 
 
 class ProgressUpdater:
-    def __init__(self, redis_client: RedisType, document_upload_id: str):
+    def __init__(
+        self,
+        redis_client: RedisType,
+        document_upload_id: str,
+        pub_channel: Union[PubSubChannel, str],
+    ):
         self.redis_client = redis_client
         self.document_upload_id = document_upload_id
+        if isinstance(pub_channel, str):
+            if not PUBSUB_CONFIG.is_valid_channel(pub_channel):
+                raise ValueError(f"Invalid pub_channel: {pub_channel}")
+            self.pub_channel = PubSubChannel(pub_channel)
+        else:
+            self.pub_channel = pub_channel
 
     async def update(
         self,
         progress: float,
         status: str = "PROGRESS",
-        payload: Optional[ProgressData] = None,
+        payload: Optional[Union[WebCaptureProgressData, SummaryProgressData]] = None,
     ):
         await self.redis_client.publish(
-            "capture_website_task",
+            PUBSUB_CONFIG.get_channel_name(self.pub_channel),
             json.dumps(
                 {
                     "connection_id": self.document_upload_id,
@@ -42,7 +49,9 @@ class ProgressUpdater:
             ),
         )
 
-    async def complete(self, payload: ProgressData):
+    async def complete(
+        self, payload: Union[WebCaptureProgressData, SummaryProgressData]
+    ):
         await self.update(100, "COMPLETE", payload)
 
     async def error(self):

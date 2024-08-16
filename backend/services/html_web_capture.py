@@ -17,7 +17,7 @@ from db.models.document_uploads import (
     AllowedS3Buckets,
     SourceType,
 )
-from utils.progress_updater import ProgressUpdater
+from utils.progress_updater import ProgressUpdater, WebCaptureProgressData
 from utils.fetch_and_store import fetch_and_store_resource
 
 s3_settings = S3Settings()
@@ -143,15 +143,15 @@ async def capture_html(
         )
 
         await progress_updater.complete(
-            {
-                "presigned_url": s3_url,
-                "file_type": "text/html",
-                "file_name": "index.html",
-                "document_upload_id": document_upload_id,
-                "url_friendly_file_name": document["file_details"][
+            WebCaptureProgressData(
+                presigned_url=s3_url,
+                file_type="text/html",
+                file_name="index.html",
+                document_upload_id=document_upload_id,
+                url_friendly_file_name=document["file_details"][
                     "url_friendly_file_name"
                 ],
-            }
+            )
         )
 
         return {

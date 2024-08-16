@@ -60,7 +60,9 @@ async def async_capture(url: str, document_upload_id: str):
     async with get_redis_client() as redis_client, get_session() as session, get_mongo_client(
         "document_uploads"
     ) as mongo_collection:
-        progress_updater = ProgressUpdater(redis_client, document_upload_id)
+        progress_updater = ProgressUpdater(
+            redis_client, document_upload_id, "capture_website_task"
+        )
         try:
             await progress_updater.update(10, "STARTED")
 
