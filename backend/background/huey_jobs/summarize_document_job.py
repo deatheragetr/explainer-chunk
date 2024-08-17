@@ -27,13 +27,12 @@ async def get_redis_client():
         await client.close()
 
 
-@huey.task()
 async def async_summarize_document(
     document_upload_id: str, model_config: ModelPairConfig
 ):
     async with get_redis_client() as redis_client:
         progress_updater = ProgressUpdater(
-            redis_client, document_upload_id, "capture_website_task"
+            redis_client, document_upload_id, "summarize_document_task"
         )
         ai_summary_service = AISummaryService(
             openai_api_key=open_ai_settings.openai_api_key,
@@ -43,6 +42,7 @@ async def async_summarize_document(
         )
         try:
             await ai_summary_service.most_advanced_summarize(document_upload_id)
+            # await ai_summary_service.basic_summarize_text(document_upload_id)
             logger.info(
                 f"Finished summarizing document with document_upload_id={document_upload_id} for model={model_config['chat_model']['model_name']}"
             )
@@ -51,9 +51,9 @@ async def async_summarize_document(
 
 
 @huey.task()
-def summarize_document(document_upload_id: str, model_name: str = "gpt-4o-mini"):
+def summarize_document(document_upload_id: str, model_name: str = "gpt-4-mini"):
     logger.info(
-        f"Queueing summarize document for document_upload_id={document_upload_id} for model={model_name}"
+        f"Starting summarize document for document_upload_id={document_upload_id} for model={model_name}"
     )
     try:
         model_pair_config = DEFAULT_MODEL_CONFIGS[model_name]

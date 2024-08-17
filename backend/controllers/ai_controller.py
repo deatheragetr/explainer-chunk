@@ -39,7 +39,7 @@ async def create_summary(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    summarize_document(document_id=document_upload_id, model_name=request.model)
+    summarize_document(document_upload_id=document_upload_id, model_name=request.model)
     return {"message": "Summary task started"}
 
 

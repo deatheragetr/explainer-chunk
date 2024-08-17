@@ -1,8 +1,9 @@
 import asyncio
+import random
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion import ChatCompletion
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Coroutine
 from pinecone import Pinecone, ServerlessSpec
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -100,27 +101,34 @@ class AISummaryService:
         ]
         return sorted(chunks, key=lambda x: x["chunk_index"])
 
-    # REMOVE?
-    # async def basic_summarize_text(self, document_id: str) -> Dict[str, str]:
-    #     chunks = await self.get_document_chunks(document_id, top_k=10)
-    #     prompt = "Summarize the following document:\n\n"
-    #     for chunk in chunks:
-    #         prompt += chunk['text'] + "\n\n"
+    async def basic_summarize_text(self, document_id: str) -> Dict[str, str]:
+        chunks = await self.get_document_chunks(document_id, top_k=20)
+        prompt = "This is the document.  Keep in mind, this may be the whole document, or a fragment of it.  Please try to summarize the document as a whole the best you can:\n\n"
+        for chunk in chunks:
+            prompt += chunk["text"] + "\n\n"
 
-    #     response = await self.openai_client.chat.completions.create(
-    #         model=self.model_pair_config['chat_model']['model_name'],
-    #         messages=[
-    #             {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
-    #             {"role": "user", "content": prompt}
-    #         ],
-    #         max_tokens=self.model_pair_config['chat_model']['max_output_tokens']
-    #     )
+        response = await self.openai_client.chat.completions.create(
+            model=self.model_pair_config["chat_model"]["model_name"],
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that summarizes documents.  I'm providing you with as much of the document as I can fit in this message, possibly the whole thing if it fits. Please summarize it for me.  Please describe the type of document, its purpose and give an intelligible summary of it",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=self.model_pair_config["chat_model"]["max_output_tokens"],
+        )
 
-    #     summary_content = response.choices[0].message.content
-    #     if summary_content is None:
-    #         raise ValueError("Failed to generate summary: API returned None")
+        summary_content = response.choices[0].message.content
+        if summary_content is None:
+            raise ValueError("Failed to generate summary: API returned None")
 
-    #     return {"summary": summary_content}
+        await self.progress_updater.complete(
+            payload=SummaryProgressData(
+                completeText=summary_content,
+            )
+        )
+        return {"summary": summary_content}
 
     # REMOVE?
     # async def recursive_summarize(self, document_id: str) -> Dict[str, str]:
@@ -180,10 +188,12 @@ class AISummaryService:
         chunks = await self.get_document_chunks(document_id, top_k=50)
         target_length = self.model_pair_config["chat_model"]["target_summary_length"]
 
+        await self.progress_updater.update(progress=5, status="IN_PROGRESS")
+
         async def summarize_with_context(
             text: str, context: str = "", target_tokens: Optional[int] = None
         ) -> str:
-            prompt = f"Context: {context}\n\nSummarize the following text concisely, maintaining coherence with the context. "
+            prompt = f"Context: {context}\n\nSummarize the following text concisely, maintaining coherence with the context. Please provide the purpose, key points, and any other relevant information to understanding the document as a cohesive whole.  Be intelligible.\n\n"
             if target_tokens:
                 prompt += f"Aim for approximately {target_tokens} tokens."
 
@@ -251,12 +261,25 @@ class AISummaryService:
         chunk_texts = [chunk["text"] for chunk in chunks]
         adaptive_chunks = await adaptive_chunk(chunk_texts)
 
+        await self.progress_updater.update(progress=10, status="IN_PROGRESS")
+
         # Fully parallelized summarization with rate limiting
-        summarization_tasks = [
-            rate_limited_summarize(chunk[0], adaptive_chunks[i - 1][0] if i > 0 else "")
-            for i, chunk in enumerate(adaptive_chunks)
-        ]
+        summarization_tasks: List[Coroutine[Any, Any, str]] = []
+        for i, chunk in enumerate(adaptive_chunks):
+            summarization_tasks.append(
+                rate_limited_summarize(
+                    chunk[0], adaptive_chunks[i - 1][0] if i > 0 else ""
+                )
+            )
+            # Update progress for each chunk
+            await self.progress_updater.update(
+                progress=10 + (30 * (i + 1) / len(adaptive_chunks)),
+                status="IN_PROGRESS",
+            )
+
         first_level_summaries = await asyncio.gather(*summarization_tasks)
+
+        await self.progress_updater.update(progress=40, status="IN_PROGRESS")
 
         # Determine if we need a second level of summarization
         total_tokens = sum(
@@ -268,18 +291,26 @@ class AISummaryService:
             target_chunk_length = target_length // num_second_level_chunks
 
             second_level_chunks = await adaptive_chunk(first_level_summaries)
-            summarization_tasks = [
-                rate_limited_summarize(
-                    chunk[0],
-                    second_level_chunks[i - 1][0] if i > 0 else "",
-                    target_chunk_length,
+            summarization_tasks: List[Coroutine[Any, Any, str]] = []
+            for i, chunk in enumerate(second_level_chunks):
+                summarization_tasks.append(
+                    rate_limited_summarize(
+                        chunk[0],
+                        second_level_chunks[i - 1][0] if i > 0 else "",
+                        target_chunk_length,
+                    )
                 )
-                for i, chunk in enumerate(second_level_chunks)
-            ]
+                await self.progress_updater.update(
+                    progress=40 + (30 * (i + 1) / len(second_level_chunks)),
+                    status="IN_PROGRESS",
+                )
+
             second_level_summaries = await asyncio.gather(*summarization_tasks)
             final_summary = "\n\n".join(second_level_summaries)
         else:
             final_summary = "\n\n".join(first_level_summaries)
+
+        await self.progress_updater.update(progress=70, status="IN_PROGRESS")
 
         # Final condensation if still too long
         final_summary_tokens = self.embedding_generator.num_tokens_from_string(
@@ -289,6 +320,21 @@ class AISummaryService:
             final_summary = await summarize_with_context(
                 final_summary, target_tokens=target_length
             )
+            await self.progress_updater.update(progress=90, status="IN_PROGRESS")
+
+        remaining_text = final_summary
+        while remaining_text:
+            chunk_size = random.randint(50, 200)
+            chunk = remaining_text[:chunk_size]
+            remaining_text = remaining_text[chunk_size:]
+
+            await self.progress_updater.update(
+                progress=95,  # Keep progress at 95% during chunked updates
+                status="IN_PROGRESS",
+                payload=SummaryProgressData(newText=chunk),
+            )
+            # Add a small delay to simulate processing time and avoid overwhelming the client
+            await asyncio.sleep(0.1)
 
         await self.progress_updater.complete(
             payload=SummaryProgressData(

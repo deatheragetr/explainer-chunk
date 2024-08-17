@@ -78,13 +78,6 @@ class RedisSubscriber:
             channel = message.get("channel", "").decode("utf-8")
 
             if PUBSUB_CONFIG.is_valid_channel(channel):
-                # channel_enum = PubSubChannel(channel)
-                # payload_type = PUBSUB_CONFIG.get_channel_config(channel_enum)[
-                #     "payload_type"
-                # ]
-
-                # You might want to add additional validation here based on the payload_type
-
                 socket_prefix = CHANNEL_TO_SOCKET_PREFIX_MAP[PubSubChannel(channel)]
 
                 await self.websocket_manager.send_message(
