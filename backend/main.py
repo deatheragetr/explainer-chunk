@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-import logging
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
@@ -8,7 +8,7 @@ from controllers import (
     upload_controller,
     website_capture_controller,
     websocket_controller,
-    ai_controller
+    ai_controller,
 )
 from background.subscribers.redis_subscriber import RedisSubscriber
 from config.redis import redis_pool, RedisType
@@ -23,10 +23,16 @@ from background.huey_jobs.capture_website_job import huey, capture_website  # ty
 from background.huey_jobs.process_document_job import process_document  # type: ignore
 from background.huey_jobs.summarize_document_job import summarize_document  # type: ignore
 
+from config.logger import setup_logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Determine environment
+ENV = os.getenv("ENV", "development")
+
+# Setup logging based on environment
+if ENV == "production":
+    logger = setup_logging(log_level="INFO", log_to_file=True, log_file="app.log")
+else:
+    logger = setup_logging(log_level="DEBUG")  # More verbose for development
 
 
 @asynccontextmanager

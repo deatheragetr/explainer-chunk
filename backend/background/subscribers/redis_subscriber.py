@@ -28,6 +28,12 @@ class PubSub(Protocol):
     def unsubscribe(self) -> Coroutine[Any, Any, Any]: ...
 
 
+CHANNEL_TO_SOCKET_PREFIX_MAP: Dict[PubSubChannel, str] = {
+    PubSubChannel.CAPTURE_WEBSITE: "document_upload",
+    PubSubChannel.SUMMARIZE_DOCUMENT: "summary",
+}
+
+
 class RedisSubscriber:
     def __init__(self, redis_client: RedisType, websocket_manager: WebSocketManager):
         self.redis_client = redis_client
@@ -60,7 +66,8 @@ class RedisSubscriber:
                 logger.info("Redis subscriber received cancellation signal")
                 break
             except Exception as e:
-                logger.error(f"Error in redis subscriber: {e}")
+                logger.exception(e)
+                logger.error(f"Error in redis subscriber")
                 await asyncio.sleep(1)
 
         await self.cleanup()
@@ -78,8 +85,10 @@ class RedisSubscriber:
 
                 # You might want to add additional validation here based on the payload_type
 
+                socket_prefix = CHANNEL_TO_SOCKET_PREFIX_MAP[PubSubChannel(channel)]
+
                 await self.websocket_manager.send_message(
-                    json.dumps(data), data["connection_id"]
+                    json.dumps(data), data["connection_id"], socket_prefix
                 )
             else:
                 logger.warning(f"Received message from unknown channel: {channel}")
