@@ -33,16 +33,7 @@
     <!-- Right Panel: Tools -->
     <div :style="{ width: rightPanelWidth + 'px' }" class="p-4 space-y-4 overflow-auto">
       <!-- Summarize Section -->
-      <div class="bg-white p-4 shadow rounded-lg">
-        <h3 class="text-xl font-semibold mb-2">Summarize</h3>
-        <button
-          @click="summarize"
-          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-        >
-          Summarize Document
-        </button>
-        <p v-if="summary" class="mt-2">{{ summary }}</p>
-      </div>
+      <SummaryAI :documentUploadId="documentUploadId" v-if="documentUploadId" />
 
       <!-- Highlight and Explain Section -->
       <div class="bg-white p-4 shadow rounded-lg">
@@ -180,13 +171,14 @@ import {
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
-import PDFViewer from './Viewers/PDFViewer.vue'
-import WebsiteViewer from './Viewers/WebsiteViewer.vue'
-import EpubViewer from './Viewers/EpubViewer.vue'
-import JSONViewer from './Viewers/JSONViewer.vue'
-import MarkdownViewer from './Viewers/MarkdownViewer.vue'
-import DocxViewer from './Viewers/DocxViewer.vue'
-import SpreadsheetViewer from './Viewers/SpreadsheetViewer.vue'
+import PDFViewer from '@/components/Viewers/PDFViewer.vue'
+import WebsiteViewer from '@/components/Viewers/WebsiteViewer.vue'
+import EpubViewer from '@/components/Viewers/EpubViewer.vue'
+import JSONViewer from '@/components/Viewers/JSONViewer.vue'
+import MarkdownViewer from '@/components/Viewers/MarkdownViewer.vue'
+import DocxViewer from '@/components/Viewers/DocxViewer.vue'
+import SpreadsheetViewer from '@/components/Viewers/SpreadsheetViewer.vue'
+import SummaryAI from '@/components/SummaryAI.vue'
 import { uploadLargeFile } from '@/utils/fileUpload'
 
 interface ChatMessage {
@@ -242,7 +234,8 @@ export default defineComponent({
     DialogTitle,
     TransitionChild,
     TransitionRoot,
-    MarkdownViewer
+    MarkdownViewer,
+    SummaryAI
   },
   props: {
     documentId: {
@@ -271,6 +264,7 @@ export default defineComponent({
     const chatMessages = ref<ChatMessage[]>([])
     const error = ref<string | null>(null)
     const isOpen = ref(false)
+    const documentUploadId = ref<string | null>(null)
 
     // Status loading bar data
     const importProgress = ref<ImportProgress | null>(null)
@@ -294,6 +288,7 @@ export default defineComponent({
         )
         contentUrl.value = response.data.presigned_url
         updateFileType(response.data.file_type)
+        documentUploadId.value = id
       } catch (error) {
         console.error('Error fetching document details:', error)
         // Handle error (e.g., show error message to user)
@@ -372,7 +367,7 @@ export default defineComponent({
     }
 
     const connectWebSocket = (connectionId: string) => {
-      websocket.value = new WebSocket(`ws://localhost:8000/ws/${connectionId}`)
+      websocket.value = new WebSocket(`ws://localhost:8000/ws/document-upload/${connectionId}`)
 
       websocket.value.onopen = () => {
         console.log('WebSocket connected')
@@ -421,6 +416,7 @@ export default defineComponent({
           url: url.value,
           document_upload_id: importDocRes.data.id
         })
+        documentUploadId.value = importDocRes.data.id
         resetFileTypes(null)
       } catch (e) {
         error.value = 'Failed to start website capture'
@@ -551,6 +547,8 @@ export default defineComponent({
             payload: {}
           }
 
+          documentUploadId.value = response.id
+
           const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}/read`
           router.push(newPath)
 
@@ -623,7 +621,8 @@ export default defineComponent({
       updateFileType,
       importProgress,
       captureWebsite,
-      isDialogButtonDisabled
+      isDialogButtonDisabled,
+      documentUploadId
     }
   }
 })

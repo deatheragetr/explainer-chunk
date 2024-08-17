@@ -159,7 +159,7 @@ export async function uploadLargeFile(
     file_type: fileType,
     file_key: fileKey,
     extracted_text: result.text,
-    extracted_metadata: result.metadata
+    extracted_metadata: result.metadata || {}
   })
 
   updateProgress('completed', 100)
