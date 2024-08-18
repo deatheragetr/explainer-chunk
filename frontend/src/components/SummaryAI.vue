@@ -155,7 +155,7 @@
   </div>
 </template>
 <script lang="ts">
-import { defineComponent, ref, onUnmounted, computed } from 'vue'
+import { defineComponent, ref, onUnmounted, computed, watch } from 'vue'
 import axios from 'axios'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -190,14 +190,30 @@ export default defineComponent({
     const MAX_RECONNECT_ATTEMPTS = 5
 
     const formattedSummary = computed(() => {
-      // Convert markdown to HTML
       const rawHtml = marked(summary.value)
-
-      // Sanitize the HTML to prevent XSS attacks
-      const sanitizedHtml = DOMPurify.sanitize(rawHtml)
-
-      return sanitizedHtml
+      return DOMPurify.sanitize(rawHtml)
     })
+
+    const resetState = () => {
+      summary.value = ''
+      error.value = ''
+      isGenerating.value = false
+      progress.value = 0
+      canGenerate.value = true
+      if (websocket) {
+        websocket.close()
+        websocket = null
+      }
+    }
+
+    watch(
+      () => props.documentUploadId,
+      (newId, oldId) => {
+        if (newId !== oldId) {
+          resetState()
+        }
+      }
+    )
 
     const connectWebSocket = () => {
       websocket = new WebSocket(
@@ -213,7 +229,7 @@ export default defineComponent({
         const data: WebSocketMessage = JSON.parse(event.data)
         console.log('WebSocket message:', data)
 
-        progress.value = data.progress
+        progress.value = data.progress ? Math.round(data.progress) : data.progress
 
         if (data.status === 'COMPLETE') {
           summary.value = data.payload.completeText
@@ -243,13 +259,10 @@ export default defineComponent({
         }
       }
     }
-
     const generateSummary = async () => {
       try {
+        resetState()
         isGenerating.value = true
-        error.value = ''
-        summary.value = ''
-        progress.value = 0
         canGenerate.value = false
 
         connectWebSocket()
@@ -286,7 +299,8 @@ export default defineComponent({
       progress,
       canGenerate,
       generateSummary,
-      selectedModel
+      selectedModel,
+      resetState
     }
   }
 })

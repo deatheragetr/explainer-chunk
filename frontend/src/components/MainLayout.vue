@@ -5,12 +5,7 @@
       <div class="p-4">
         <h2 class="text-2xl font-bold mb-4">Document Viewer</h2>
 
-        <button
-          @click="openModal"
-          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
-        >
-          Add Website or Document
-        </button>
+        <DocumentUploadModal @document-loaded="handleDocumentLoaded" />
 
         <PDFViewer v-if="isPDF" :pdfUrl="contentUrl" />
         <EpubViewer v-else-if="isEpub" :epubUrl="contentUrl" />
@@ -75,99 +70,11 @@
         </button>
       </div>
     </div>
-
-    <!-- Modal -->
-    <TransitionRoot appear :show="isOpen" as="template">
-      <CustomDialog as="div" @close="closeModal" class="relative z-10">
-        <TransitionChild
-          as="template"
-          enter="duration-300 ease-out"
-          enter-from="opacity-0"
-          enter-to="opacity-100"
-          leave="duration-200 ease-in"
-          leave-from="opacity-100"
-          leave-to="opacity-0"
-        >
-          <div class="fixed inset-0 bg-black bg-opacity-25" />
-        </TransitionChild>
-
-        <div class="fixed inset-0 overflow-y-auto">
-          <div class="flex min-h-full items-center justify-center p-4 text-center">
-            <TransitionChild
-              as="template"
-              enter="duration-300 ease-out"
-              enter-from="opacity-0 scale-95"
-              enter-to="opacity-100 scale-100"
-              leave="duration-200 ease-in"
-              leave-from="opacity-100 scale-100"
-              leave-to="opacity-0 scale-95"
-            >
-              <DialogPanel
-                class="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all"
-              >
-                <DialogTitle as="h3" class="text-lg font-medium leading-6 text-gray-900">
-                  Add Website or Document
-                </DialogTitle>
-                <div class="mt-2">
-                  <!-- External URI upload -->
-                  <input
-                    v-model="url"
-                    @keyup.enter="loadContent"
-                    class="w-full p-2 border rounded mb-2"
-                    placeholder="Enter PDF or website URL"
-                  />
-
-                  <!-- File input in the modal -->
-                  <input
-                    type="file"
-                    @change="handleFileUpload"
-                    accept="application/pdf, application/epub+zip, application/json, text/markdown, text/plain, .md, .markdown, .txt, .json, .pdf, .docx, .csv, .xlsx"
-                    class="mb-2"
-                  />
-                  <p v-if="error" class="text-red-500 mb-2">{{ error }}</p>
-                  <!-- Import Progress Bar -->
-                  <div v-if="importProgress" class="mt-4">
-                    <div class="text-sm font-medium text-gray-700">
-                      Processing Document. {{ importProgress.progress || 0 }}%
-                      {{ importProgress.status }}
-                    </div>
-                    <div class="mt-1 h-2 w-full bg-gray-200 rounded-full">
-                      <div
-                        class="h-2 bg-blue-600 rounded-full"
-                        :style="{ width: `${importProgress.progress || 0}%` }"
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="mt-4">
-                  <button
-                    type="button"
-                    class="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                    @click="loadContent"
-                    :disabled="isDialogButtonDisabled"
-                  >
-                    Load Content
-                  </button>
-                </div>
-              </DialogPanel>
-            </TransitionChild>
-          </div>
-        </div>
-      </CustomDialog>
-    </TransitionRoot>
   </div>
 </template>
 
 <script lang="ts">
 import { defineComponent, ref, type Ref, onMounted, onUnmounted, computed } from 'vue'
-import {
-  Dialog as CustomDialog,
-  DialogPanel,
-  DialogTitle,
-  TransitionChild,
-  TransitionRoot
-} from '@headlessui/vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -179,32 +86,17 @@ import MarkdownViewer from '@/components/Viewers/MarkdownViewer.vue'
 import DocxViewer from '@/components/Viewers/DocxViewer.vue'
 import SpreadsheetViewer from '@/components/Viewers/SpreadsheetViewer.vue'
 import SummaryAI from '@/components/SummaryAI.vue'
-import { uploadLargeFile } from '@/utils/fileUpload'
+import DocumentUploadModal from './DocumentUploadModal.vue'
+import type { DocumentUploadData } from '@/types'
 
 interface ChatMessage {
   sender: string
   text: string
 }
 
-interface UploadResponse {
-  id: string
-  file_name: string
-  file_type: string
-  url_friendly_file_name: string
-}
-
 interface DocumentDetails {
   presigned_url: string
   file_type: string
-}
-
-interface WebsiteCaptureResponse {
-  url: string
-  document_upload_id: string
-}
-
-interface ImportDocumentUploadResponse {
-  id: string
 }
 
 interface ImportProgress {
@@ -229,13 +121,9 @@ export default defineComponent({
     JSONViewer,
     DocxViewer,
     SpreadsheetViewer,
-    CustomDialog,
-    DialogPanel,
-    DialogTitle,
-    TransitionChild,
-    TransitionRoot,
     MarkdownViewer,
-    SummaryAI
+    SummaryAI,
+    DocumentUploadModal
   },
   props: {
     documentId: {
@@ -280,6 +168,20 @@ export default defineComponent({
     const isDialogButtonDisabled = computed(() => {
       return !!importProgress.value && importProgress.value.status !== 'COMPLETE'
     })
+
+    const handleDocumentLoaded = (documentData: DocumentUploadData) => {
+      console.log('DOCUMENT DATA: ', documentData)
+      if (documentData.file) {
+        contentUrl.value = URL.createObjectURL(documentData.file)
+      } else {
+        contentUrl.value = documentData.presigned_url || documentData.url || ''
+      }
+      documentUploadId.value = documentData.id || documentData.document_upload_id
+      updateFileType(documentData.file_type)
+      const newPath = `/uploads/${documentData.id || documentData.document_upload_id}/${documentData.url_friendly_file_name}/read`
+
+      router.push(newPath)
+    }
 
     const fetchDocumentDetails = async (id: string) => {
       try {
@@ -366,77 +268,43 @@ export default defineComponent({
       importProgress.value = null
     }
 
-    const connectWebSocket = (connectionId: string) => {
-      websocket.value = new WebSocket(`ws://localhost:8000/ws/document-upload/${connectionId}`)
+    // const captureWebsite = async () => {
+    //   try {
+    //     // Create Document Upload { import: true }
+    //     // Open websocket connection using document_id
+    //     // Pass { url: url.value, document_id } to the POST capture-website endpoint
+    //     importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 0, payload: {} }
+    //     const importDocRes = await axios.post<ImportDocumentUploadResponse>(
+    //       'http://localhost:8000/document-uploads/imports',
+    //       {}
+    //     )
+    //     importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 5, payload: {} }
+    //     connectWebSocket(importDocRes.data.id)
+    //     await axios.post<WebsiteCaptureResponse>('http://localhost:8000/capture-website/', {
+    //       url: url.value,
+    //       document_upload_id: importDocRes.data.id
+    //     })
+    //     documentUploadId.value = importDocRes.data.id
+    //     resetFileTypes(null)
+    //   } catch (e) {
+    //     error.value = 'Failed to start website capture'
+    //     console.error(e)
+    //   }
+    // }
 
-      websocket.value.onopen = () => {
-        console.log('WebSocket connected')
-      }
-
-      websocket.value.onmessage = (event) => {
-        const data: ImportProgress = JSON.parse(event.data)
-        console.log('WebSocket message:', data)
-        importProgress.value = data
-        console.log('capture status: ', importProgress.value)
-        if (data.status === 'COMPLETE' && data.payload.presigned_url) {
-          contentUrl.value = data.payload.presigned_url
-          if (data.payload.file_type) updateFileType(data.payload.file_type)
-
-          const newPath = `/uploads/${data.payload.document_upload_id}/${data.payload.url_friendly_file_name}/read`
-          router.push(newPath)
-          closeModal()
-          if (websocket.value) {
-            websocket.value.close()
-          }
-        }
-      }
-
-      websocket.value.onerror = (error) => {
-        console.error('WebSocket error:', error)
-      }
-
-      websocket.value.onclose = () => {
-        console.log('WebSocket disconnected')
-      }
-    }
-
-    const captureWebsite = async () => {
-      try {
-        // Create Document Upload { import: true }
-        // Open websocket connection using document_id
-        // Pass { url: url.value, document_id } to the POST capture-website endpoint
-        importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 0, payload: {} }
-        const importDocRes = await axios.post<ImportDocumentUploadResponse>(
-          'http://localhost:8000/document-uploads/imports',
-          {}
-        )
-        importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 5, payload: {} }
-        connectWebSocket(importDocRes.data.id)
-        await axios.post<WebsiteCaptureResponse>('http://localhost:8000/capture-website/', {
-          url: url.value,
-          document_upload_id: importDocRes.data.id
-        })
-        documentUploadId.value = importDocRes.data.id
-        resetFileTypes(null)
-      } catch (e) {
-        error.value = 'Failed to start website capture'
-        console.error(e)
-      }
-    }
-
-    const loadContent = () => {
-      console.log('Loading content:', url.value)
-      error.value = null
-      if (url.value) {
-        try {
-          captureWebsite()
-        } catch (e) {
-          error.value = 'Invalid URL. Please enter a valid URL.'
-        }
-      } else {
-        error.value = 'Please enter a URL'
-      }
-    }
+    // const loadContent = () => {
+    //   console.log('Loading content:', url.value)
+    //   error.value = null
+    //   if (url.value) {
+    //     try {
+    //       captureWebsite()
+    //     } catch (e) {
+    //       error.value = 'Invalid URL. Please enter a valid URL.'
+    //     }
+    //   } else {
+    //     error.value = 'Please enter a URL'
+    //   }
+    // }
 
     const resetFileTypes = (currentRef: Ref<boolean> | null) => {
       const fileTypes: Ref<boolean>[] = [
@@ -452,122 +320,6 @@ export default defineComponent({
       fileTypes.forEach((refObj) => {
         refObj.value = refObj === currentRef
       })
-    }
-
-    const handleFileUpload = async (event: Event) => {
-      const file = (event.target as HTMLInputElement).files?.[0]
-      if (file) {
-        // The basic idea here is to be flexible with file inputs, a defer first to the file type and then then the extension
-        try {
-          let fileSupported: Boolean = false
-          let fileType = ''
-          if (file.type) {
-            fileSupported = true
-            switch (file.type) {
-              case 'application/pdf':
-                resetFileTypes(isPDF)
-                break
-              case 'application/epub+zip':
-                resetFileTypes(isEpub)
-                break
-              case 'application/json':
-                resetFileTypes(isJSON)
-                break
-              case 'text/markdown':
-              case 'text/plain': // This will catch .txt files
-                resetFileTypes(isMarkdown)
-                break
-              case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                resetFileTypes(isDocx)
-                break
-              case 'text/csv':
-              case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-                resetFileTypes(isSpreadsheet)
-                break
-              default:
-                fileSupported = false
-            }
-            if (fileSupported) {
-              fileType = file.type
-            }
-          }
-          // If MIME TYPE unsupported or not defined, fallback to using the file extension
-          if (!fileSupported) {
-            const extension = file.name.split('.').pop()?.toLowerCase()
-            switch (extension) {
-              case 'pdf':
-                resetFileTypes(isPDF)
-                fileType = 'application/pdf'
-                break
-              case 'json':
-                resetFileTypes(isJSON)
-                fileType = 'application/json'
-                break
-              // case 'xml':
-              case 'epub':
-                resetFileTypes(isEpub)
-                fileType = 'application/epub+zip'
-                break
-              case 'csv':
-              case 'xlsx':
-                resetFileTypes(isSpreadsheet)
-                fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                break
-              case 'md':
-              case 'markdown':
-                resetFileTypes(isMarkdown)
-                fileType = 'text/markdown'
-                break
-              case 'txt': // Explicitly handle .txt files as Markdown
-                resetFileTypes(isMarkdown)
-                fileType = 'text/plain'
-                break
-              case 'docx':
-                resetFileTypes(isDocx)
-                fileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                break
-              // ... handle other file types ...
-              default:
-                resetFileTypes(null)
-                throw new Error('Unsupported file type')
-            }
-          }
-
-          importProgress.value = {
-            status: 'preparing upload',
-            progress: 10,
-            payload: {}
-          }
-
-          const response: UploadResponse = await uploadLargeFile(file, fileType, importProgress)
-
-          importProgress.value = {
-            status: 'uploaded',
-            progress: 90,
-            payload: {}
-          }
-
-          documentUploadId.value = response.id
-
-          const newPath = `/uploads/${response.id}/${response.url_friendly_file_name}/read`
-          router.push(newPath)
-
-          contentUrl.value = URL.createObjectURL(file)
-
-          importProgress.value = {
-            status: 'complete',
-            progress: 100,
-            payload: {}
-          }
-
-          error.value = null
-          closeModal()
-        } catch (e) {
-          error.value = `Error loading the file: ${e instanceof Error ? e.message : String(e)}`
-        }
-      } else {
-        error.value = 'No file selected.'
-      }
     }
 
     const summarize = () => {
@@ -597,7 +349,7 @@ export default defineComponent({
       closeModal,
       summary,
       contentUrl,
-      loadContent,
+      // loadContent,
       isPDF,
       isEpub,
       isJSON,
@@ -609,7 +361,7 @@ export default defineComponent({
       explanation,
       chatInput,
       chatMessages,
-      handleFileUpload,
+      // handleFileUpload,
       summarize,
       highlightAndExplain,
       sendChatMessage,
@@ -620,9 +372,10 @@ export default defineComponent({
       fetchDocumentDetails,
       updateFileType,
       importProgress,
-      captureWebsite,
+      // captureWebsite,
       isDialogButtonDisabled,
-      documentUploadId
+      documentUploadId,
+      handleDocumentLoaded
     }
   }
 })
