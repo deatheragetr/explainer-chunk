@@ -19,6 +19,7 @@ from db.models.document_uploads import (
 )
 from utils.progress_updater import ProgressUpdater, WebCaptureProgressData
 from utils.fetch_and_store import fetch_and_store_resource
+from utils.text_and_metadata_extractor import extract_text_and_metadata
 
 s3_settings = S3Settings()
 S3_HOST = s3_settings.s3_host
@@ -132,8 +133,17 @@ async def capture_html(
             source_url=url,
         )
 
+        modified_html_content = str(soup)
+
+        extracted_text, extracted_metadata = await extract_text_and_metadata(
+            modified_html_content.encode("utf-8"), "text/html"
+        )
+
         document = MongoDocumentUpload(
-            _id=ObjectId(document_upload_id), file_details=mongo_file_details
+            _id=ObjectId(document_upload_id),
+            file_details=mongo_file_details,
+            extracted_text=extracted_text,
+            extracted_metadata=extracted_metadata,
         )
 
         await mongo_collection.update_one(

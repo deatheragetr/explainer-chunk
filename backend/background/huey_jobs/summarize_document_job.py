@@ -1,9 +1,11 @@
 import asyncio
+from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 from config.huey import huey
-from config.redis import Redis
+from config.redis import RedisPool, RedisType
 from config.ai_models import DEFAULT_MODEL_CONFIGS, ModelPairConfig
 from config.environment import PineconeSettings, OpenAISettings
+from config.mongo import MongoManager, mongo_settings, TypedAsyncIOMotorDatabase
 from services.ai_summary_service import AISummaryService
 from utils.progress_updater import ProgressUpdater
 
@@ -20,17 +22,31 @@ open_ai_settings = OpenAISettings()
 
 @asynccontextmanager
 async def get_redis_client():
-    client = Redis(host="localhost", port=6379, db=0)
+    pool = RedisPool()
     try:
+        client: RedisType = await pool.get_client()
         yield client
     finally:
-        await client.close()
+        await pool.close()
+
+
+# Not ideal, but this is the only apparant way to avoid event loop is closed errors
+@asynccontextmanager
+async def get_mongo_db() -> AsyncGenerator[TypedAsyncIOMotorDatabase, None]:
+    mongo_manager = MongoManager[TypedAsyncIOMotorDatabase](mongo_settings)
+    await mongo_manager.connect()
+    assert mongo_manager.db is not None
+    try:
+        yield mongo_manager.db
+    finally:
+        await mongo_manager.close()
 
 
 async def async_summarize_document(
-    document_upload_id: str, model_config: ModelPairConfig
+    document_upload_id: str,
+    model_config: ModelPairConfig,
 ):
-    async with get_redis_client() as redis_client:
+    async with get_redis_client() as redis_client, get_mongo_db() as db:
         progress_updater = ProgressUpdater(
             redis_client, document_upload_id, "summarize_document_task"
         )
@@ -41,8 +57,11 @@ async def async_summarize_document(
             progress_updater=progress_updater,
         )
         try:
-            await ai_summary_service.most_advanced_summarize(document_upload_id)
+            # await ai_summary_service.most_advanced_summarize(document_upload_id)
             # await ai_summary_service.basic_summarize_text(document_upload_id)
+
+            await ai_summary_service.map_reduce_summarize(document_upload_id, db)
+            # await ai_summary_service.sequential_summarize(document_upload_id, db)
             logger.info(
                 f"Finished summarizing document with document_upload_id={document_upload_id} for model={model_config['chat_model']['model_name']}"
             )
@@ -51,23 +70,17 @@ async def async_summarize_document(
 
 
 @huey.task()
-def summarize_document(document_upload_id: str, model_name: str = "gpt-4-mini"):
+def summarize_document(
+    document_upload_id: str,
+    model_name: str = "gpt-4-mini",
+):
     logger.info(
         f"Starting summarize document for document_upload_id={document_upload_id} for model={model_name}"
     )
     try:
         model_pair_config = DEFAULT_MODEL_CONFIGS[model_name]
 
-        # Create and run the event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(
-                async_summarize_document(document_upload_id, model_pair_config)
-            )
-        finally:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
+        asyncio.run(async_summarize_document(document_upload_id, model_pair_config))
 
         logger.info(
             f"Finished summarizing for document_id={document_upload_id} for model={model_name}"

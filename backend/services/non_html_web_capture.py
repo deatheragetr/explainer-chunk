@@ -18,6 +18,7 @@ from db.models.document_uploads import (
     SourceType,
 )
 from utils.progress_updater import ProgressUpdater, WebCaptureProgressData
+from utils.text_and_metadata_extractor import extract_text_and_metadata
 
 
 async def capture_non_html(
@@ -75,8 +76,15 @@ async def capture_non_html(
             source_url=url,
         )
 
+        extracted_text, extracted_metadata = await extract_text_and_metadata(
+            content, normalized_file_type
+        )
+
         document = MongoDocumentUpload(
-            _id=ObjectId(document_upload_id), file_details=mongo_file_details
+            _id=ObjectId(document_upload_id),
+            file_details=mongo_file_details,
+            extracted_metadata=extracted_metadata,
+            extracted_text=extracted_text,
         )
 
         await mongo_collection.update_one(
