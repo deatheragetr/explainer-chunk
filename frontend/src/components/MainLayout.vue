@@ -268,44 +268,6 @@ export default defineComponent({
       importProgress.value = null
     }
 
-    // const captureWebsite = async () => {
-    //   try {
-    //     // Create Document Upload { import: true }
-    //     // Open websocket connection using document_id
-    //     // Pass { url: url.value, document_id } to the POST capture-website endpoint
-    //     importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 0, payload: {} }
-    //     const importDocRes = await axios.post<ImportDocumentUploadResponse>(
-    //       'http://localhost:8000/document-uploads/imports',
-    //       {}
-    //     )
-    //     importProgress.value = { task_id: 'import', status: 'PREPARING', progress: 5, payload: {} }
-    //     connectWebSocket(importDocRes.data.id)
-    //     await axios.post<WebsiteCaptureResponse>('http://localhost:8000/capture-website/', {
-    //       url: url.value,
-    //       document_upload_id: importDocRes.data.id
-    //     })
-    //     documentUploadId.value = importDocRes.data.id
-    //     resetFileTypes(null)
-    //   } catch (e) {
-    //     error.value = 'Failed to start website capture'
-    //     console.error(e)
-    //   }
-    // }
-
-    // const loadContent = () => {
-    //   console.log('Loading content:', url.value)
-    //   error.value = null
-    //   if (url.value) {
-    //     try {
-    //       captureWebsite()
-    //     } catch (e) {
-    //       error.value = 'Invalid URL. Please enter a valid URL.'
-    //     }
-    //   } else {
-    //     error.value = 'Please enter a URL'
-    //   }
-    // }
-
     const resetFileTypes = (currentRef: Ref<boolean> | null) => {
       const fileTypes: Ref<boolean>[] = [
         isPDF,

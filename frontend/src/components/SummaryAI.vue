@@ -158,7 +158,7 @@
   </div>
 </template>
 <script lang="ts">
-import { defineComponent, ref, onUnmounted, computed, watch } from 'vue'
+import { defineComponent, ref, onUnmounted, watch } from 'vue'
 import axios from 'axios'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -192,24 +192,6 @@ export default defineComponent({
     let websocket: WebSocket | null = null
     let reconnectAttempts = 0
     const MAX_RECONNECT_ATTEMPTS = 5
-
-    // const formattedSummary = computed(() => {
-    //   const rawHtml = marked(summary.value)
-    //   return DOMPurify.sanitize(rawHtml)
-    // })
-    // const formattedSummary = computed(() => {
-    //   const rawHtml = marked(summary.value)
-    //   if (typeof rawHtml === 'string') {
-    //     return DOMPurify.sanitize(rawHtml)
-    //   } else {
-    //     // If it's a Promise, return a new computed property that will update when the Promise resolves
-    //     return new Promise<string>((resolve) => {
-    //       rawHtml.then((result) => {
-    //         resolve(DOMPurify.sanitize(result))
-    //       })
-    //     })
-    //   }
-    // })
 
     const updateFormattedSummary = async () => {
       try {
