@@ -1,5 +1,7 @@
 import asyncio
 import random
+from motor.motor_asyncio import AsyncIOMotorCollection
+from bson import ObjectId
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion import ChatCompletion
@@ -12,6 +14,10 @@ from numpy.typing import NDArray
 from scipy.sparse import spmatrix
 
 from config.ai_models import ModelPairConfig
+from config.mongo import TypedAsyncIOMotorDatabase
+from db.models.document_uploads import (
+    MongoDocumentUpload,
+)
 from utils.progress_updater import ProgressUpdater, SummaryProgressData
 from services.embedding_generator import EmbeddingGenerator
 from tenacity import retry, stop_after_attempt, wait_random_exponential
@@ -354,3 +360,200 @@ class AISummaryService:
                 "model_used": self.model_pair_config["chat_model"]["model_name"],
             },
         }
+
+    async def map_reduce_summarize(
+        self, document_id: str, db: TypedAsyncIOMotorDatabase
+    ) -> Dict[str, str]:
+        # Retrieve document from MongoDB
+        obj_id = ObjectId(document_id)
+        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
+        document = await collection.find_one({"_id": obj_id})
+        entire_text: str = document["extracted_text"]
+
+        await self.progress_updater.update(progress=5, status="IN_PROGRESS")
+
+        # Split text into chunks
+        chunk_size = 4000  # Adjust based on your needs and model limits
+        chunks = [
+            entire_text[i : i + chunk_size]
+            for i in range(0, len(entire_text), chunk_size)
+        ]
+        total_chunks = len(chunks)
+
+        async def summarize_chunk(chunk: str, chunk_index: int) -> str:
+            async with self.semaphore:
+                messages: List[ChatCompletionMessageParam] = [
+                    {
+                        "role": "system",
+                        "content": "You are an expert agent in information extraction and summarization",
+                    },
+                    {"role": "user", "content": chunk},
+                ]
+                summary = await self._make_api_call(
+                    messages,
+                    self.model_pair_config["chat_model"]["max_output_tokens"] // 2,
+                )
+                await self.progress_updater.update(
+                    progress=5 + (60 * (chunk_index + 1) / total_chunks),
+                    status="IN_PROGRESS",
+                )
+                return summary
+
+        def final_summary_prompt(
+            combined_summary: str, document: Dict[str, Any]
+        ) -> str:
+            header = "Read the following concatenation of summaries of chunks of text"
+            if document["extracted_metadata"].get("title"):
+                header += f" from {document['extracted_metadata']['title']}"
+            if document["extracted_metadata"].get("creator"):
+                header += f" by {document['extracted_metadata']['creator']}"
+
+            metadata_string = ""
+            for key, value in document["extracted_metadata"].items():
+                metadata_string += f"{key}: {value}\n"
+
+            if metadata_string:
+                header += f". Additionally, consider this metadata text as appropriate: {metadata_string}"
+            return f"""
+                {header}:
+                ---------------  
+                {combined_summary}  
+                ---------------  
+                
+                Your tasks are as follows:  
+                1. Summarize the concatenation of summaries above into a single, intelligible summary.
+                2. At the end of the summary, add key insights, conclusions, recommendations, or any other relevant information that you consider important.
+                3. Structure the document in an intelligible, coherent and readable manner.
+
+            """
+
+        summarization_tasks: List[Coroutine[Any, Any, str]] = []
+        for i, chunk in enumerate(chunks):
+            prompt = f"""
+            Read the following context document:  
+            ---------------  
+            {chunk}  
+            ---------------  
+            
+            Your tasks are as follows:  
+            1.- Write an extensive, fluid, and continuous paragraph summarizing the most important aspects of the information you have read.  
+            2.- You can only synthesize your response using exclusively the information from the context document.  
+
+            """
+            summarization_tasks.append(summarize_chunk(prompt, i))
+
+        chunk_summaries = await asyncio.gather(*summarization_tasks)
+
+        await self.progress_updater.update(progress=65, status="IN_PROGRESS")
+
+        # Reduce step: Combine chunk summaries
+        combined_summary = "\n\n".join(chunk_summaries)
+        combined_summary_prompt = final_summary_prompt(combined_summary, document)
+
+        # Final summarization
+        final_summary_messages: List[ChatCompletionMessageParam] = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that creates comprehensive document summaries.",
+            },
+            {"role": "user", "content": combined_summary_prompt},
+        ]
+
+        final_summary = await self._make_api_call(
+            final_summary_messages,
+            self.model_pair_config["chat_model"]["max_output_tokens"],
+        )
+
+        await self.progress_updater.update(progress=90, status="IN_PROGRESS")
+
+        # Chunked updates of the final summary
+        remaining_text = final_summary
+        while remaining_text:
+            chunk_size = random.randint(50, 200)
+            chunk = remaining_text[:chunk_size]
+            remaining_text = remaining_text[chunk_size:]
+
+            await self.progress_updater.update(
+                progress=95,
+                status="IN_PROGRESS",
+                payload=SummaryProgressData(newText=chunk),
+            )
+            await asyncio.sleep(0.1)
+
+        await self.progress_updater.complete(
+            payload=SummaryProgressData(
+                completeText=final_summary,
+            )
+        )
+
+        return {"summary": final_summary}
+
+    async def sequential_summarize(
+        self, document_id: str, db: TypedAsyncIOMotorDatabase
+    ) -> Dict[str, str]:
+        # Retrieve document from MongoDB
+        obj_id = ObjectId(document_id)
+        collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
+        document = await collection.find_one({"_id": obj_id})
+        entire_text: str = document["extracted_text"]
+
+        await self.progress_updater.update(progress=5, status="IN_PROGRESS")
+
+        # Split text into chunks
+        chunk_size = 2000  # Smaller chunks for more frequent updates
+        chunks = [
+            entire_text[i : i + chunk_size]
+            for i in range(0, len(entire_text), chunk_size)
+        ]
+        total_chunks = len(chunks)
+
+        summary_so_far = ""
+        final_summary = ""
+
+        for i, chunk in enumerate(chunks):
+            messages: List[ChatCompletionMessageParam] = [
+                {
+                    "role": "system",
+                    "content": "You are summarizing a document in order. Maintain key information and context. Your summary should flow naturally from the previous part.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Previous summary:\n{summary_so_far}\n\nNext part to summarize:\n{chunk}",
+                },
+            ]
+
+            chunk_summary = await self._make_api_call(
+                messages, self.model_pair_config["chat_model"]["max_output_tokens"] // 2
+            )
+
+            summary_so_far += chunk_summary + " "
+            final_summary = summary_so_far
+
+            # Update progress
+            progress = 5 + (85 * (i + 1) / total_chunks)
+            await self.progress_updater.update(
+                progress=progress,
+                status="IN_PROGRESS",
+                payload=SummaryProgressData(newText=chunk_summary),
+            )
+
+        # Final touch-up
+        final_messages: List[ChatCompletionMessageParam] = [
+            {
+                "role": "system",
+                "content": "Review and refine the following document summary. Ensure it's coherent, well-structured, and captures the main points of the entire document.",
+            },
+            {"role": "user", "content": final_summary},
+        ]
+
+        final_summary = await self._make_api_call(
+            final_messages, self.model_pair_config["chat_model"]["max_output_tokens"]
+        )
+
+        await self.progress_updater.complete(
+            payload=SummaryProgressData(
+                completeText=final_summary,
+            )
+        )
+
+        return {"summary": final_summary}
