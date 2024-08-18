@@ -13,7 +13,7 @@ import mammoth from 'mammoth'
 export default defineComponent({
   name: 'DocxViewer',
   props: {
-    docxUrl: {
+    contentUrl: {
       type: String,
       required: true
     }
@@ -37,7 +37,7 @@ export default defineComponent({
     }
 
     watch(
-      () => props.docxUrl,
+      () => props.contentUrl,
       (newUrl) => {
         if (newUrl) {
           loadDocx(newUrl)

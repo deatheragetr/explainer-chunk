@@ -27,3 +27,8 @@ export interface DocumentUploadData {
   url?: string
   url_friendly_file_name: string
 }
+
+export interface DocumentDetails {
+  presigned_url: string
+  file_type: string
+}
