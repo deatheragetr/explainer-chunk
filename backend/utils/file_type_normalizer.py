@@ -9,6 +9,7 @@ supported_file_types: Dict[str, str] = {
     "csv": "text/csv",
     "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "html": "text/html",
+    "word": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
@@ -35,6 +36,10 @@ def normalize_file_type(content_type: str, file_extension: str) -> str:
         "text/html": supported_file_types["html"],
         ".html": supported_file_types["html"],
         ".htm": supported_file_types["html"],
+        ".docx": supported_file_types["word"],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": supported_file_types[
+            "word"
+        ],
     }
     return (
         type_mapping.get(content_type)
