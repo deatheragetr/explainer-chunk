@@ -92,7 +92,10 @@
       leave-from-class="opacity-100 translate-y-0"
       leave-to-class="opacity-0 translate-y-4"
     >
-      <div v-if="summary" class="mt-8 bg-white p-6 rounded-lg shadow-inner border border-blue-100">
+      <div
+        v-if="formattedSummary"
+        class="mt-8 bg-white p-6 rounded-lg shadow-inner border border-blue-100"
+      >
         <h4 class="font-semibold text-xl mb-4 text-indigo-700">Summary:</h4>
         <div
           class="text-gray-700 leading-relaxed font-serif text-lg whitespace-pre-wrap"
@@ -180,6 +183,7 @@ export default defineComponent({
   },
   setup(props) {
     const summary = ref('')
+    const formattedSummary = ref('')
     const error = ref('')
     const isGenerating = ref(false)
     const progress = ref(0)
@@ -189,13 +193,39 @@ export default defineComponent({
     let reconnectAttempts = 0
     const MAX_RECONNECT_ATTEMPTS = 5
 
-    const formattedSummary = computed(() => {
-      const rawHtml = marked(summary.value)
-      return DOMPurify.sanitize(rawHtml)
-    })
+    // const formattedSummary = computed(() => {
+    //   const rawHtml = marked(summary.value)
+    //   return DOMPurify.sanitize(rawHtml)
+    // })
+    // const formattedSummary = computed(() => {
+    //   const rawHtml = marked(summary.value)
+    //   if (typeof rawHtml === 'string') {
+    //     return DOMPurify.sanitize(rawHtml)
+    //   } else {
+    //     // If it's a Promise, return a new computed property that will update when the Promise resolves
+    //     return new Promise<string>((resolve) => {
+    //       rawHtml.then((result) => {
+    //         resolve(DOMPurify.sanitize(result))
+    //       })
+    //     })
+    //   }
+    // })
+
+    const updateFormattedSummary = async () => {
+      try {
+        const rawHtml = await marked(summary.value)
+        formattedSummary.value = DOMPurify.sanitize(rawHtml)
+      } catch (e) {
+        console.error('Error formatting summary:', e)
+        error.value = 'Error formatting summary. Please try again.'
+      }
+    }
+
+    watch(summary, updateFormattedSummary)
 
     const resetState = () => {
       summary.value = ''
+      formattedSummary.value = ''
       error.value = ''
       isGenerating.value = false
       progress.value = 0
