@@ -2,7 +2,7 @@ import type { Ref } from 'vue'
 import axios, { type AxiosResponse } from 'axios'
 import { parallelLimit } from '@/utils/parallelLimit'
 import type { ImportProgress, ExtractionResult } from '@/types'
-import { extractTextFromFile, UnsupportedFileTypeError } from '@/utils/textExtract'
+import { extractTextFromFile } from '@/utils/textExtract'
 import { createProgressUpdater } from '@/utils/progressUpdater'
 
 const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks, minimum chunk size S3 allows
