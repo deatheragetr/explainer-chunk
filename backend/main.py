@@ -37,6 +37,7 @@ else:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     app.state.redis_pool = redis_pool
     redis_client: RedisType = await app.state.redis_pool.get_client()
     websocket_manager = get_websocket_manager()

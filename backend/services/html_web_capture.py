@@ -20,6 +20,12 @@ from db.models.document_uploads import (
 from utils.progress_updater import ProgressUpdater, WebCaptureProgressData
 from utils.fetch_and_store import fetch_and_store_resource
 from utils.text_and_metadata_extractor import extract_text_and_metadata
+from services.openai_assistant_service import OpenAIAssistantService
+from config.environment import OpenAISettings
+
+openai_settings = OpenAISettings()
+
+from config.ai_models import DEFAULT_MODEL_CONFIGS
 
 s3_settings = S3Settings()
 S3_HOST = s3_settings.s3_host
@@ -144,7 +150,18 @@ async def capture_html(
             file_details=mongo_file_details,
             extracted_text=extracted_text,
             extracted_metadata=extracted_metadata,
+            openai_assistants=[],
         )
+        # TODO: Grab default model config for user
+        openai_assistant_service = OpenAIAssistantService(
+            openai_api_key=openai_settings.openai_api_key
+        )
+        assistant_details = await openai_assistant_service.create_assistant_thread(
+            model_config=DEFAULT_MODEL_CONFIGS["gpt-4o-mini"],
+            document=document,
+            mongo_collection=mongo_collection,
+        )
+        document["openai_assistants"].append(assistant_details)
 
         await mongo_collection.update_one(
             {"_id": ObjectId(document_upload_id)},

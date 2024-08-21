@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, Literal, Optional, Union, Dict, Any
+from typing import TypedDict, Annotated, Literal, Optional, Union, Dict, Any, List
 from api.utils.url_friendly import make_url_friendly
 from bson import ObjectId
 from enum import Enum
@@ -47,11 +47,30 @@ class MongoFileDetailsUpload(MongoFileDetailsBase):
 MongoFileDetails = Union[MongoFileDetailsWeb, MongoFileDetailsUpload]
 
 
+class OpenAIAssistantDetails(TypedDict, total=False):
+    assistant_id: Annotated[str, "OpenAI Assistant ID"]
+    thread_id: Annotated[str, "OpenAI Thread ID"]
+    model: Annotated[str, "Model used for this assistant"]
+    external_document_upload_id: Optional[
+        Annotated[
+            str, "ID of the associated document upload, e.g., the file ID from OpenAI"
+        ]
+    ]
+    last_message_id: Optional[Annotated[str, "ID of the last message in the thread"]]
+
+
 class MongoDocumentUpload(TypedDict):
     _id: Annotated[ObjectId, "MongoDB ObjectId"]
     file_details: Annotated[MongoFileDetails, "Details of the uploaded file"]
-    extracted_text: Optional[Annotated[str, "Extracted text content from the document"]]
-    extracted_metadata: Optional[Annotated[Dict[str, Any], "Extracted metadata (e.g., author, title) from the document"]]
+    extracted_text: Annotated[str, "Extracted text content from the document"]
+    extracted_metadata: Optional[
+        Annotated[
+            Dict[str, Any], "Extracted metadata (e.g., author, title) from the document"
+        ]
+    ]
+    openai_assistants: Annotated[
+        List[OpenAIAssistantDetails], "List of associated OpenAI Assistants"
+    ]
 
 
 def generate_s3_key_for_file(
@@ -99,24 +118,12 @@ def create_mongo_file_details(
         return MongoFileDetailsUpload(**base_details, source=source)
 
 
-# Example usage:
-# web_file = create_mongo_file_details(
-#     file_name="example.pdf",
-#     file_type="pdf",
-#     file_key="documents/example.pdf",
-#     url_friendly_file_name="example-pdf",
-#     s3_bucket="my-bucket",
-#     s3_url="https://my-bucket.s3.amazonaws.com/documents/example.pdf",
-#     source=SourceType.WEB,
-#     source_url="https://example.com/original-file.pdf"
-# )
-#
-# upload_file = create_mongo_file_details(
-#     file_name="upload.docx",
-#     file_type="docx",
-#     file_key="documents/upload.docx",
-#     url_friendly_file_name="upload-docx",
-#     s3_bucket="my-bucket",
-#     s3_url="https://my-bucket.s3.amazonaws.com/documents/upload.docx",
-#     source=SourceType.FILE_UPLOAD
-# )
+def create_assistant_details(
+    assistant_id: str, thread_id: str, model: str, last_message_id: Optional[str] = None
+) -> OpenAIAssistantDetails:
+    return {
+        "assistant_id": assistant_id,
+        "thread_id": thread_id,
+        "model": model,
+        "last_message_id": last_message_id,
+    }

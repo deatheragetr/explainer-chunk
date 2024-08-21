@@ -1,9 +1,11 @@
 from typing import Dict, TypedDict
 
+
 class EmbeddingModelConfig(TypedDict):
     dimension: int
     model_name: str
     max_input_tokens: int  # Maximum tokens the embedding model can handle
+
 
 class ChatModelConfig(TypedDict):
     model_name: str
@@ -17,36 +19,53 @@ class ProcessingConfig(TypedDict):
     overlap: int  # in tokens
     max_tokens_per_chunk: int
 
+
 class PineconeConfig(TypedDict):
     index_name: str
+
+
+class AssistantConfig(TypedDict):
+    type: str
+    id: str
+
 
 class ModelPairConfig(TypedDict):
     embedding_model: EmbeddingModelConfig
     chat_model: ChatModelConfig
     processing: ProcessingConfig
     pinecone: PineconeConfig
+    assistant: AssistantConfig
+
+
+OPENAI_ASSISTANTS = {
+    "gpt-4o-mini": {
+        "assistant_id": "asst_nIvVttQMhsJYqJe3dDN5fHgf",
+    }
+}
 
 MODEL_CONFIGS: Dict[str, ModelPairConfig] = {
     "text-embedding-3-small_gpt-4o-mini": {
         "embedding_model": {
-            "dimension": 1536, # https://platform.openai.com/docs/guides/embeddings/how-to-get-embeddings
+            "dimension": 1536,  # https://platform.openai.com/docs/guides/embeddings/how-to-get-embeddings
             "model_name": "text-embedding-3-small",
-            "max_input_tokens": 8191 # https://platform.openai.com/docs/guides/embeddings/embedding-models
+            "max_input_tokens": 8191,  # https://platform.openai.com/docs/guides/embeddings/embedding-models
         },
         "chat_model": {
             "model_name": "gpt-4o-mini",
-            "max_context_tokens": 128000, 
+            "max_context_tokens": 128000,
             "max_output_tokens": 16000,
-            "target_summary_length": 1000
+            "target_summary_length": 1000,
+        },
+        "assistant": {
+            "type": "openai",
+            "id": OPENAI_ASSISTANTS["gpt-4o-mini"]["assistant_id"],
         },
         "processing": {
             "chunk_size": 1000,  # Chunking max_tokens
             "max_tokens_per_chunk": 512,  # Chunking max_tokens
-            "overlap": 50
+            "overlap": 50,
         },
-        "pinecone": {
-            "index_name": "text-embedding-3-small-v1"
-        }
+        "pinecone": {"index_name": "text-embedding-3-small-v1"},
     }
 }
 

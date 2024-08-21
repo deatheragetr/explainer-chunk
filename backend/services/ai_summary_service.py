@@ -368,6 +368,10 @@ class AISummaryService:
         obj_id = ObjectId(document_id)
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
         document = await collection.find_one({"_id": obj_id})
+        if not document:
+            raise ValueError(
+                f"AI Summary Service: Document with ID {document_id} not found"
+            )
         entire_text: str = document["extracted_text"]
 
         await self.progress_updater.update(progress=5, status="IN_PROGRESS")

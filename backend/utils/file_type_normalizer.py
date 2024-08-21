@@ -12,6 +12,18 @@ supported_file_types: Dict[str, str] = {
     "word": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
+mimetype_to_file_extension: Dict[str, str] = {
+    "application/pdf": ".pdf",
+    "application/epub+zip": ".epub",
+    "application/json": ".json",
+    "text/markdown": ".md",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "text/html": ".html",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+}
+
 
 def normalize_file_type(content_type: str, file_extension: str) -> str:
     content_type = content_type.split(";")[0].lower()
