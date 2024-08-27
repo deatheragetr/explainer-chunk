@@ -31,6 +31,7 @@ class PubSub(Protocol):
 CHANNEL_TO_SOCKET_PREFIX_MAP: Dict[PubSubChannel, str] = {
     PubSubChannel.CAPTURE_WEBSITE: "document_upload",
     PubSubChannel.SUMMARIZE_DOCUMENT: "summary",
+    PubSubChannel.EXLAIN_TEXT: "explain_text",
 }
 
 

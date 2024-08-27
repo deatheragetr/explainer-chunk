@@ -5,6 +5,7 @@ from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from motor.motor_asyncio import AsyncIOMotorCollection
 from db.models.document_uploads import MongoDocumentUpload
 from background.huey_jobs.summarize_document_job import summarize_document
+from background.huey_jobs.explain_text_job import explain_text
 
 router = APIRouter()
 
@@ -14,7 +15,7 @@ class SummarizeRequest(BaseModel):
 
 
 class ExplainRequest(BaseModel):
-    highlight_text: str
+    highlighted_text: str
     model: str
 
 
@@ -43,15 +44,28 @@ async def create_summary(
     return {"message": "Summary task started"}
 
 
-# @router.post("/documents/{document_id}/explanation")
-# async def create_explanation(document_id: str, request: ExplainRequest,
-#                              ai_service: AIService = Depends(),
-#                              document_service: DocumentService = Depends()):
-#     document = await document_service.get_document(document_id)
-#     if not document:
-#         raise HTTPException(status_code=404, detail="Document not found")
-#     await ai_service.create_explanation(document_id, document.content, request.highlight_text, request.model)
-#     return {"message": "Explanation task started"}
+@router.post("/documents/{document_upload_id}/explanation")
+async def create_explanation(
+    document_upload_id: str,
+    request: ExplainRequest,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
+    obj_id = ObjectId(document_upload_id)
+
+    # Retrieve document from MongoDB
+    collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
+    # Avoid fetching the entire document, with the potentially long extracted text
+    document = await collection.find_one({"_id": obj_id}, {"_id": 1, "file_details": 1})
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    explain_text(
+        document_upload_id=document_upload_id,
+        highlighted_text=request.highlighted_text,
+        model_name=request.model,
+    )
+    return {"message": "Explanation task started"}
+
 
 # @router.post("/documents/{document_id}/chat")
 # async def create_chat_message(document_id: str, request: ChatRequest,

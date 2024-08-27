@@ -30,6 +30,7 @@ class AssistantConfig(TypedDict):
 
 
 class ModelPairConfig(TypedDict):
+    model_name: str
     embedding_model: EmbeddingModelConfig
     chat_model: ChatModelConfig
     processing: ProcessingConfig
@@ -45,6 +46,7 @@ OPENAI_ASSISTANTS = {
 
 MODEL_CONFIGS: Dict[str, ModelPairConfig] = {
     "text-embedding-3-small_gpt-4o-mini": {
+        "model_name": "gpt-4o-mini",
         "embedding_model": {
             "dimension": 1536,  # https://platform.openai.com/docs/guides/embeddings/how-to-get-embeddings
             "model_name": "text-embedding-3-small",

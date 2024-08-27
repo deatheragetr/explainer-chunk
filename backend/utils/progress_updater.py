@@ -6,6 +6,7 @@ from config.redis_pubsub_channels import (
     PUBSUB_CONFIG,
     WebCaptureProgressData,
     SummaryProgressData,
+    ExplainTextProgressData,
 )
 
 
@@ -35,7 +36,9 @@ class ProgressUpdater:
         self,
         progress: float,
         status: str = "PROGRESS",
-        payload: Optional[Union[WebCaptureProgressData, SummaryProgressData]] = None,
+        payload: Optional[
+            Union[WebCaptureProgressData, SummaryProgressData, ExplainTextProgressData]
+        ] = None,
     ):
         await self.redis_client.publish(
             PUBSUB_CONFIG.get_channel_name(self.pub_channel),

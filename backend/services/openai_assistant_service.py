@@ -1,7 +1,7 @@
 import os
 import tempfile
-from typing import Optional
-from openai import OpenAI
+from typing import Optional, Type, AsyncGenerator
+from openai import OpenAI, AssistantEventHandler, AsyncOpenAI
 from openai.types.file_object import FileObject
 from openai.types.beta import Thread
 from openai.types.beta.threads.message import Message
@@ -50,6 +50,7 @@ class AssistantRunError(OpenAIAssistantError):
 class OpenAIAssistantService:
     def __init__(self, openai_api_key: str):
         self.client = OpenAI(api_key=openai_api_key)
+        self.async_client = AsyncOpenAI(api_key=openai_api_key)
         self.supported_file_types = {
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -260,3 +261,86 @@ class OpenAIAssistantService:
         except Exception as e:
             logger.error(f"Error getting messages: {str(e)}")
             raise OpenAIAssistantError("Failed to get messages") from e
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(OpenAIAssistantError),
+        reraise=True,
+    )
+    async def explain_text_subsection(
+        self,
+        thread_id: str,
+        assistant_id: str,
+        text_subsection: str,
+        context_file_id: str,
+        # reading_level: str = "intermediate",
+        # reading_level: str = "in elementary school",
+        reading_level: str = "a professional with postgraduate training in the field",
+        output_length: str = "very short",
+    ) -> AsyncGenerator[str, None]:
+        # ) -> None:
+        try:
+            # Validate input parameters
+            if not text_subsection.strip():
+                raise ValueError("text_subsection must not be empty")
+
+            if not context_file_id.strip():
+                raise ValueError("context_file_id must not be empty")
+
+            valid_reading_levels = [
+                "in elementary school",
+                "in middle school",
+                "in high school",
+                "in college",
+                "in graduate school, but not in the field"
+                "in graduate school and in the field",
+                "a professional with postgraduate training in the field",
+            ]
+            # if reading_level not in valid_reading_levels:
+            #     raise ValueError(
+            #         f"Invalid reading_level. Must be one of {valid_reading_levels}"
+            #     )
+
+            valid_output_lengths = ["very short", "short", "medium", "long"]
+            if output_length not in valid_output_lengths:
+                raise ValueError(
+                    f"Invalid output_length. Must be one of {valid_output_lengths}"
+                )
+
+            # Create instructions for the assistant
+            instructions = f"""
+            Answer this users questions about the following text subsection in the context of the file with ID {context_file_id}, addressing the person as though
+            they have the reading level of someone who is {reading_level} and providing resopnses that are {output_length} in length.
+            """
+
+            # Add the message with the text subsection and context file ID to the thread
+            message_content = f"""
+            Please explain the following text subsection in the context of the file with ID {context_file_id}:
+
+            "{text_subsection}"
+
+            Adjust your explanation to the reading level of someone who is {reading_level}.
+            Adjust the length of your explanation to be {output_length} in length
+            Focus only on the content from the specified file (ID: {context_file_id}) when providing context and explanations.
+            """
+
+            await self.add_message_to_thread(
+                thread_id=thread_id, content=message_content
+            )
+
+            # Run the assistant with streaming
+            with self.client.beta.threads.runs.stream(
+                thread_id=thread_id,
+                assistant_id=assistant_id,
+                instructions=instructions,
+                # event_handler=handler,
+            ) as stream:
+                for text in stream.text_deltas:
+                    yield text
+
+        except Exception as e:
+            logger.error(f"Error in explain_text_subsection: {str(e)}")
+            raise OpenAIAssistantError(
+                f"Failed to explain text subsection: {str(e)}"
+            ) from e

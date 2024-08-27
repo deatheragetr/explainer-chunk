@@ -47,7 +47,7 @@ class MongoFileDetailsUpload(MongoFileDetailsBase):
 MongoFileDetails = Union[MongoFileDetailsWeb, MongoFileDetailsUpload]
 
 
-class OpenAIAssistantDetails(TypedDict, total=False):
+class OpenAIAssistantDetails(TypedDict):
     assistant_id: Annotated[str, "OpenAI Assistant ID"]
     thread_id: Annotated[str, "OpenAI Thread ID"]
     model: Annotated[str, "Model used for this assistant"]
@@ -127,3 +127,11 @@ def create_assistant_details(
         "model": model,
         "last_message_id": last_message_id,
     }
+
+
+def find_assistant_by_model(document: MongoDocumentUpload, target_model: str):
+    assistants = document.get("openai_assistants", [])
+    for assistant in assistants:
+        if assistant.get("model") == target_model:
+            return assistant
+    return None
