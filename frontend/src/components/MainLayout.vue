@@ -4,6 +4,7 @@
     <div
       :style="{ width: leftPanelWidth + 'px' }"
       class="bg-white shadow-xl overflow-auto transition-all duration-300 ease-in-out"
+      @mouseup="handleTextSelection"
     >
       <div class="p-6">
         <h2 class="text-3xl font-extrabold mb-6 text-indigo-800 tracking-tight">Document Viewer</h2>
@@ -76,7 +77,7 @@
 
 <script lang="ts">
 import axios from 'axios'
-import { defineComponent, ref, computed, onMounted, onUnmounted } from 'vue'
+import { defineComponent, ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import DocumentUploadModal from './DocumentUploadModal.vue'
 import SummaryAI from '@/components/SummaryAI.vue'
@@ -121,6 +122,7 @@ export default defineComponent({
     const rightPanelWidth = ref(window.innerWidth / 2)
     const isDragging = ref(false)
     const fileType = ref('')
+    const selectedText = ref('')
 
     const tabs = [
       { name: 'summary', label: 'Summary', component: SummaryAI },
@@ -132,6 +134,15 @@ export default defineComponent({
       const tab = tabs.find((t) => t.name === currentTab.value)
       return tab ? tab.component : null
     })
+
+    const handleTextSelection = () => {
+      const selection = window.getSelection()
+      if (selection && selection.toString().trim().length > 0) {
+        selectedText.value = selection.toString().trim()
+      }
+    }
+
+    provide('selectedText', selectedText)
 
     const currentViewer = computed(() => {
       if (!fileType.value) return null
@@ -240,7 +251,8 @@ export default defineComponent({
       handleDocumentLoaded,
       startDragging,
       fetchDocumentDetails,
-      fileType
+      fileType,
+      handleTextSelection
     }
   }
 })

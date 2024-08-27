@@ -6,51 +6,7 @@
 
     <!-- Model Selection Dropdown -->
     <div class="mb-6">
-      <label for="model-select" class="block text-sm font-medium text-gray-700 mb-2"
-        >Select Model</label
-      >
-      <div class="relative">
-        <select
-          id="model-select"
-          v-model="selectedModel"
-          class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-        >
-          <optgroup label="OpenAI Models">
-            <option value="gpt-4o-mini">GPT-4o Mini</option>
-            <option value="gpt-4o" disabled>GPT-4o (Upgrade required)</option>
-            <option value="gpt-4-turbo" disabled>GPT-4 Turbo (Upgrade required)</option>
-            <option value="gpt-4" disabled>GPT-4 (Upgrade required)</option>
-            <option value="gpt-3.5-turbo" disabled>GPT-3.5 Turbo (Upgrade required)</option>
-          </optgroup>
-          <optgroup label="Anthropic Models">
-            <option value="claude-3.5-sonnet" disabled>Claude 3.5 Sonnet (Upgrade required)</option>
-            <option value="claude-3-opus" disabled>Claude 3 Opus (Upgrade required)</option>
-            <option value="claude-3-haiku" disabled>Claude 3 Haiku (Upgrade required)</option>
-          </optgroup>
-          <optgroup label="Meta Models">
-            <option value="llama-3.1" disabled>LLama 3.1 (Upgrade required)</option>
-            <option value="llama-3" disabled>LLama 3 (Upgrade required)</option>
-          </optgroup>
-        </select>
-        <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-          <svg
-            class="h-5 w-5 text-gray-400"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M10 3a1 1 0 01.707.293l3 3a1 1 0 01-1.414 1.414L10 5.414 7.707 7.707a1 1 0 01-1.414-1.414l3-3A1 1 0 0110 3zm-3.707 9.293a1 1 0 011.414 0L10 14.586l2.293-2.293a1 1 0 011.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </div>
-      </div>
-      <p class="mt-2 text-sm text-gray-500">
-        Only GPT-4o Mini is available with your current plan. Upgrade to access more models.
-      </p>
+      <ModelSelector v-model="selectedModel" />
     </div>
 
     <button
@@ -128,7 +84,7 @@
       enter-to-class="opacity-100"
       leave-active-class="transition ease-in duration-200"
       leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
+      leave-to="opacity-0"
     >
       <div v-if="isGenerating" class="mt-6">
         <div class="relative pt-1">
@@ -157,11 +113,13 @@
     </transition>
   </div>
 </template>
+
 <script lang="ts">
 import { defineComponent, ref, onUnmounted, watch } from 'vue'
 import axios from 'axios'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import ModelSelector from './ModelSelector.vue'
 
 interface WebSocketMessage {
   connection_id: string
@@ -175,6 +133,9 @@ interface WebSocketMessage {
 
 export default defineComponent({
   name: 'SummarySection',
+  components: {
+    ModelSelector
+  },
   props: {
     documentUploadId: {
       type: String,
@@ -271,6 +232,7 @@ export default defineComponent({
         }
       }
     }
+
     const generateSummary = async () => {
       try {
         resetState()
@@ -317,6 +279,7 @@ export default defineComponent({
   }
 })
 </script>
+
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 
@@ -324,34 +287,6 @@ export default defineComponent({
   font-family: 'Inter', sans-serif;
 }
 
-/* Custom styles for the dropdown */
-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-  background-position: right 0.5rem center;
-  background-repeat: no-repeat;
-  background-size: 1.5em 1.5em;
-  padding-right: 2.5rem;
-}
-
-select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-optgroup {
-  font-weight: bold;
-  color: #4a5568;
-}
-
-option {
-  font-weight: normal;
-  color: #1a202c;
-}
-
-option:disabled {
-  color: #a0aec0;
-}
 /* Add styles for markdown content */
 :deep(.markdown-body) {
   font-family: 'Georgia', serif;
