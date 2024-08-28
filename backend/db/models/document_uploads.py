@@ -3,6 +3,8 @@ from api.utils.url_friendly import make_url_friendly
 from bson import ObjectId
 from enum import Enum
 from config.environment import S3Settings
+from config.ai_models import ModelName
+
 
 settings = S3Settings()
 
@@ -50,13 +52,18 @@ MongoFileDetails = Union[MongoFileDetailsWeb, MongoFileDetailsUpload]
 class OpenAIAssistantDetails(TypedDict):
     assistant_id: Annotated[str, "OpenAI Assistant ID"]
     thread_id: Annotated[str, "OpenAI Thread ID"]
-    model: Annotated[str, "Model used for this assistant"]
+    model: Annotated[ModelName, "Model used for this assistant"]
     external_document_upload_id: Optional[
         Annotated[
             str, "ID of the associated document upload, e.g., the file ID from OpenAI"
         ]
     ]
     last_message_id: Optional[Annotated[str, "ID of the last message in the thread"]]
+
+
+class ChatReference(TypedDict):
+    chat_id: Annotated[ObjectId, "Reference to the chat document"]
+    model_name: Annotated[ModelName, "Name of the model used for this chat"]
 
 
 class MongoDocumentUpload(TypedDict):
@@ -71,6 +78,7 @@ class MongoDocumentUpload(TypedDict):
     openai_assistants: Annotated[
         List[OpenAIAssistantDetails], "List of associated OpenAI Assistants"
     ]
+    chats: Annotated[List[ChatReference], "List of references to associated chats"]
 
 
 def generate_s3_key_for_file(
@@ -118,18 +126,7 @@ def create_mongo_file_details(
         return MongoFileDetailsUpload(**base_details, source=source)
 
 
-def create_assistant_details(
-    assistant_id: str, thread_id: str, model: str, last_message_id: Optional[str] = None
-) -> OpenAIAssistantDetails:
-    return {
-        "assistant_id": assistant_id,
-        "thread_id": thread_id,
-        "model": model,
-        "last_message_id": last_message_id,
-    }
-
-
-def find_assistant_by_model(document: MongoDocumentUpload, target_model: str):
+def find_assistant_by_model(document: MongoDocumentUpload, target_model: ModelName):
     assistants = document.get("openai_assistants", [])
     for assistant in assistants:
         if assistant.get("model") == target_model:

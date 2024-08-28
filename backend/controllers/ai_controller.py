@@ -1,27 +1,48 @@
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from config.mongo import get_db, TypedAsyncIOMotorDatabase
+from config.ai_models import ModelName
+from config.environment import OpenAISettings
 from motor.motor_asyncio import AsyncIOMotorCollection
 from db.models.document_uploads import MongoDocumentUpload
+from db.models.chat import MongoChat
+from services.chat_message_service import ChatMessageService
 from background.huey_jobs.summarize_document_job import summarize_document
 from background.huey_jobs.explain_text_job import explain_text
+from background.huey_jobs.chat_job import chat_with_rag
 
 router = APIRouter()
 
+open_ai_settings = OpenAISettings()
+
 
 class SummarizeRequest(BaseModel):
-    model: str
+    model: ModelName
 
 
 class ExplainRequest(BaseModel):
     highlighted_text: str
-    model: str
+    model: ModelName
 
 
 class ChatRequest(BaseModel):
-    message: str
-    model: str
+    message_content: str
+    model: ModelName
+
+
+class ChatMessageResponse(BaseModel):
+    message_id: str
+    content: str
+    role: str
+    created_at: str
+    conversation_id: str
+
+
+class ChatHistoryResponse(BaseModel):
+    messages: List[ChatMessageResponse]
+    next_before: Optional[str]
 
 
 @router.post("/documents/{document_upload_id}/summary")
@@ -67,12 +88,67 @@ async def create_explanation(
     return {"message": "Explanation task started"}
 
 
-# @router.post("/documents/{document_id}/chat")
-# async def create_chat_message(document_id: str, request: ChatRequest,
-#                               ai_service: AIService = Depends(),
-#                               document_service: DocumentService = Depends()):
-#     document = await document_service.get_document(document_id)
-#     if not document:
-#         raise HTTPException(status_code=404, detail="Document not found")
-#     await ai_service.create_chat_response(document_id, document.content, request.message, request.model)
-#     return {"message": "Chat task started"}
+@router.post("/documents/{document_upload_id}/chat/messages")
+async def create_chat_message(
+    document_upload_id: str,
+    request: ChatRequest,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
+    obj_id = ObjectId(document_upload_id)
+
+    # Retrieve document from MongoDB
+    collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
+    # Avoid fetching the entire document, with the potentially long extracted text
+    document = await collection.find_one({"_id": obj_id}, {"_id": 1, "file_details": 1})
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    chat_with_rag(
+        document_upload_id=document_upload_id,
+        message_content=request.message_content,
+        model_name=request.model,
+    )
+    return {"message": "Chat task started"}
+
+
+@router.get(
+    "/documents/{document_upload_id}/chat/messages", response_model=ChatHistoryResponse
+)
+@router.get(
+    "/documents/{document_upload_id}/chat/messages", response_model=ChatHistoryResponse
+)
+async def get_chat_messages(
+    document_upload_id: str,
+    model: ModelName,
+    before: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
+    obj_id = ObjectId(document_upload_id)
+
+    # Retrieve document from MongoDB
+    collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
+    document = await collection.find_one({"_id": obj_id}, {"_id": 1})
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    chat_service = ChatMessageService(
+        db=db,
+    )
+    messages, next_before = await chat_service.get_chat_history(
+        document_upload_id=document_upload_id, model=model, before=before, limit=limit
+    )
+
+    return ChatHistoryResponse(
+        messages=[
+            ChatMessageResponse(
+                message_id=str(msg["_id"]),
+                content=msg["content"],
+                role=msg["role"],
+                created_at=msg["created_at"].isoformat(),
+                conversation_id=str(msg["conversation_id"]),
+            )
+            for msg in messages
+        ],
+        next_before=next_before,
+    )

@@ -5,7 +5,8 @@ from typing import Dict, Any, TypedDict, Optional, Annotated
 class PubSubChannel(Enum):
     CAPTURE_WEBSITE = "capture_website_task"
     SUMMARIZE_DOCUMENT = "summarize_document_task"
-    EXLAIN_TEXT = "explain_text_task"
+    EXPLAIN_TEXT = "explain_text_task"
+    CHAT = "chat_task"
 
 
 class WebCaptureProgressData(TypedDict, total=False):
@@ -28,12 +29,18 @@ class ExplainTextProgressData(TypedDict, total=False):
     completeText: Annotated[Optional[str], "Full text of the summary"]
 
 
+class ChatProgressData(TypedDict, total=False):
+    newText: Annotated[Optional[str], "New text to append to the summary"]
+    completeText: Annotated[Optional[str], "Full text of the summary"]
+
+
 class PubSubConfig:
     def __init__(self):
         self.channels: Dict[PubSubChannel, Dict[str, Any]] = {
             PubSubChannel.CAPTURE_WEBSITE: {"payload_type": WebCaptureProgressData},
             PubSubChannel.SUMMARIZE_DOCUMENT: {"payload_type": SummaryProgressData},
-            PubSubChannel.EXLAIN_TEXT: {"payload_type": ExplainTextProgressData},
+            PubSubChannel.EXPLAIN_TEXT: {"payload_type": ExplainTextProgressData},
+            PubSubChannel.CHAT: {"payload_type": ChatProgressData},
         }
 
     def get_channel_name(self, channel: PubSubChannel) -> str:

@@ -1,17 +1,14 @@
 import asyncio
 import json
-from typing import Dict, Optional, Any, Coroutine, Protocol, TYPE_CHECKING, Union
+from typing import Dict, Optional, Any, Coroutine, Protocol, TYPE_CHECKING
 
 from config.redis import Redis
 from utils.valid_json import is_valid_json
 from services.websocket_manager import WebSocketManager
 from config.redis_pubsub_channels import PUBSUB_CONFIG, PubSubChannel
+from config.logger import get_logger
 
-import logging
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 if TYPE_CHECKING:
@@ -31,7 +28,8 @@ class PubSub(Protocol):
 CHANNEL_TO_SOCKET_PREFIX_MAP: Dict[PubSubChannel, str] = {
     PubSubChannel.CAPTURE_WEBSITE: "document_upload",
     PubSubChannel.SUMMARIZE_DOCUMENT: "summary",
-    PubSubChannel.EXLAIN_TEXT: "explain_text",
+    PubSubChannel.EXPLAIN_TEXT: "explain_text",
+    PubSubChannel.CHAT: "chat",
 }
 
 

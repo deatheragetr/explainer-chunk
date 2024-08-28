@@ -5,6 +5,7 @@ from motor.motor_asyncio import (
 )
 from config.environment import MongoSettings
 from db.models.document_uploads import MongoDocumentUpload
+from db.models.chat import MongoChat
 
 from typing import Optional, TypeVar, Generic, Dict, Any, AsyncIterator, cast
 
@@ -21,6 +22,7 @@ DocType = TypeVar("DocType", bound=Dict[str, Any])
 class TypedAsyncIOMotorDatabase(AsyncIOMotorDatabase):
     # List the collections in the database here
     document_uploads: AsyncIOMotorCollection[MongoDocumentUpload]
+    chats: AsyncIOMotorCollection[MongoChat]
 
 
 DBType = TypeVar("DBType", bound=TypedAsyncIOMotorDatabase)

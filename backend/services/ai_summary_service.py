@@ -428,6 +428,7 @@ class AISummaryService:
                 1. Summarize the concatenation of summaries above into a single, intelligible summary.
                 2. At the end of the summary, add key insights, conclusions, recommendations, or any other relevant information that you consider important.
                 3. Structure the document in an intelligible, coherent and readable manner.
+                4. Make your summary very concise.
 
             """
 

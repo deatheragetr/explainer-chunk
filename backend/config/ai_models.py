@@ -1,4 +1,4 @@
-from typing import Dict, TypedDict
+from typing import Dict, TypedDict, Literal
 
 
 class EmbeddingModelConfig(TypedDict):
@@ -29,8 +29,11 @@ class AssistantConfig(TypedDict):
     id: str
 
 
+ModelName = Literal["gpt-4o-mini"]
+
+
 class ModelPairConfig(TypedDict):
-    model_name: str
+    model_name: ModelName
     embedding_model: EmbeddingModelConfig
     chat_model: ChatModelConfig
     processing: ProcessingConfig

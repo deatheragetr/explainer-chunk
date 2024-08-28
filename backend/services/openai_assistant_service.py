@@ -1,7 +1,7 @@
 import os
 import tempfile
-from typing import Optional, Type, AsyncGenerator
-from openai import OpenAI, AssistantEventHandler, AsyncOpenAI
+from typing import Optional, AsyncGenerator, Dict, Any
+from openai import OpenAI, AsyncOpenAI
 from openai.types.file_object import FileObject
 from openai.types.beta import Thread
 from openai.types.beta.threads.message import Message
@@ -15,6 +15,7 @@ from tenacity import (
 )
 from config.ai_models import ModelPairConfig
 from db.models.document_uploads import MongoDocumentUpload, OpenAIAssistantDetails
+from db.models.chat import OpenAIAssistantChat
 from config.mongo import AsyncIOMotorCollection
 from config.s3 import s3_client
 from config.logger import get_logger
@@ -116,6 +117,7 @@ class OpenAIAssistantService:
                 thread_id=thread.id,
                 model=model_config["chat_model"]["model_name"],
                 external_document_upload_id=file_id,
+                last_message_id=None,
             )
 
             # Update the MongoDB document with the new AssistantDetails
@@ -126,9 +128,62 @@ class OpenAIAssistantService:
             return assistant_details
 
         except Exception as e:
-            logger.error(f"Error in create_assistant_thread: {str(e)}")
+            logger.error(f"Error in create_chat {str(e)}")
             raise OpenAIAssistantError(
-                f"Failed to create assistant thread: {str(e)}"
+                f"Failed to create chat assistant thread: {str(e)}"
+            ) from e
+
+    async def create_chat_thread(
+        self,
+        model_config: ModelPairConfig,
+        document: MongoDocumentUpload,
+    ) -> OpenAIAssistantChat:
+        assistant_id = model_config["assistant"]["id"]
+        assistant_type = model_config["assistant"]["type"]
+        if not assistant_id:
+            raise ValueError("OpenAI Assistant ID not found in the model configuration")
+
+        if assistant_type != "openai":
+            raise ValueError(
+                f"Assistant type '{assistant_type}' is not supported by this service"
+            )
+
+        try:
+            # Create a new thread
+            thread = self._create_thread()
+
+            file_id = None
+            file_type = document["file_details"]["file_type"]
+            if file_type in self.supported_file_types:
+                # Upload the file to OpenAI if it's a supported type
+                file_path = await self._get_file_path(document)
+                openai_file = self._upload_file(file_path, file_type)
+                file_id = openai_file.id
+
+                # Add the file to the assistant
+                self._attach_file_to_thread(thread.id, file_id)
+            else:
+                # For unsupported file types, add the extracted text as a message
+                extracted_text = document.get("extracted_text", "")
+                if extracted_text:
+                    await self.add_message_to_thread(
+                        thread.id,
+                        f"Document Content:\n\n{extracted_text[:1000]}...",  # Truncate if too long
+                    )
+                else:
+                    logger.warning(
+                        f"No extracted text available for unsupported file type: {document['file_details']['file_type']}"
+                    )
+
+            return OpenAIAssistantChat(
+                assistant_id=assistant_id,
+                thread_id=thread.id,
+                external_document_upload_id=file_id,
+            )
+        except Exception as e:
+            logger.error(f"Error in create_chat {str(e)}")
+            raise OpenAIAssistantError(
+                f"Failed to create chat assistant thread: {str(e)}"
             ) from e
 
     @retry(
@@ -231,17 +286,24 @@ class OpenAIAssistantService:
         reraise=True,
     )
     async def run_assistant(
-        self, thread_id: str, assistant_id: str, instructions: Optional[str] = None
-    ) -> Run:
+        self, thread_id: str, assistant_id: str, context_file_id: str
+    ) -> AsyncGenerator[str, None]:
+
+        instructions = (
+            f"Use this uploaded file {context_file_id} to answer any questions"
+        )
         try:
-            run = self.client.beta.threads.runs.create(
+            with self.client.beta.threads.runs.stream(
                 thread_id=thread_id,
                 assistant_id=assistant_id,
                 instructions=instructions,
-            )
-            return run
+            ) as stream:
+                for text in stream.text_deltas:
+                    yield text
+
         except Exception as e:
             logger.error(f"Error running assistant: {str(e)}")
+
             raise AssistantRunError("Failed to run assistant") from e
 
     async def get_run_status(self, thread_id: str, run_id: str) -> Run:
@@ -311,7 +373,7 @@ class OpenAIAssistantService:
             # Create instructions for the assistant
             instructions = f"""
             Answer this users questions about the following text subsection in the context of the file with ID {context_file_id}, addressing the person as though
-            they have the reading level of someone who is {reading_level} and providing resopnses that are {output_length} in length.
+            they have the reading level of someone who is {reading_level}.
             """
 
             # Add the message with the text subsection and context file ID to the thread
@@ -321,8 +383,8 @@ class OpenAIAssistantService:
             "{text_subsection}"
 
             Adjust your explanation to the reading level of someone who is {reading_level}.
-            Adjust the length of your explanation to be {output_length} in length
             Focus only on the content from the specified file (ID: {context_file_id}) when providing context and explanations.
+            Please make your explanation concise.
             """
 
             await self.add_message_to_thread(

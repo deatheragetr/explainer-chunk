@@ -62,7 +62,8 @@ class AIExplainTextService:
                 thread_id=openai_assistant["thread_id"],
                 assistant_id=openai_assistant["assistant_id"],
                 text_subsection=highlighted_text,
-                context_file_id=openai_assistant.get("external_document_upload_id", ""),
+                context_file_id=openai_assistant.get("external_document_upload_id")
+                or "",
                 reading_level="intermediate",
                 output_length="medium",
             ):
