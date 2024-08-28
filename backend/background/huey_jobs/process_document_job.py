@@ -6,13 +6,10 @@ from config.ai_models import DEFAULT_MODEL_CONFIGS, ModelPairConfig
 from config.environment import PineconeSettings, OpenAISettings
 from config.mongo import MongoManager, mongo_settings, TypedAsyncIOMotorDatabase
 from services.document_processor import DocumentProcessor
+from background.huey_jobs.generate_thumbnail import generate_thumbnail
+from config.logger import get_logger
 
-import logging
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 pinecone_settings = PineconeSettings()
 open_ai_settings = OpenAISettings()
@@ -40,6 +37,7 @@ async def async_process_document(document_id: str, model_pair_config: ModelPairC
         )
         try:
             await processor.process_document(document_id)
+            generate_thumbnail(document_id)
         finally:
             # Ensure any async resources are properly closed
             await processor.embedding_generator.openai_client.close()

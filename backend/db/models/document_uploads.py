@@ -66,6 +66,12 @@ class ChatReference(TypedDict):
     model_name: Annotated[ModelName, "Name of the model used for this chat"]
 
 
+class ThumbnailDetails(TypedDict):
+    file_key: Annotated[str, "S3 key for the thumbnail"]
+    s3_bucket: Annotated[str, "S3 bucket for the thumbnail"]
+    s3_url: Annotated[str, "Full S3 URL of the thumbnail"]
+
+
 class MongoDocumentUpload(TypedDict):
     _id: Annotated[ObjectId, "MongoDB ObjectId"]
     file_details: Annotated[MongoFileDetails, "Details of the uploaded file"]
@@ -79,6 +85,9 @@ class MongoDocumentUpload(TypedDict):
         List[OpenAIAssistantDetails], "List of associated OpenAI Assistants"
     ]
     chats: Annotated[List[ChatReference], "List of references to associated chats"]
+    thumbnail: Optional[
+        Annotated[ThumbnailDetails, "Details of the document thumbnail"]
+    ]
 
 
 def generate_s3_key_for_file(

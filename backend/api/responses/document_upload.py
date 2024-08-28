@@ -1,6 +1,11 @@
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 import re
 from typing import Annotated
+
+
+class ThumbnailInfo(BaseModel):
+    presigned_url: str
 
 
 class DocumentUploadResponse(BaseModel):
@@ -12,8 +17,15 @@ class DocumentUploadResponse(BaseModel):
     ]
 
 
+class DocumentRetrieveResponseForPage(DocumentUploadResponse):
+    thumbnail: Annotated[Optional[ThumbnailInfo], "Thumbnail information"]
+    extracted_metadata: Annotated[
+        Optional[Dict[str, Any]], "Metadata extracted from file/import"
+    ]
+
+
 class DocumentRetrieveResponse(DocumentUploadResponse):
-    presigned_url: Annotated[str, "pre-signed URL to file in S3"]
+    presigned_url: Annotated[str, "pre-signed URL to document file in S3"]
 
 
 class DocumentUploadImportExternalResponse(BaseModel):
@@ -30,3 +42,8 @@ class DocumentUploadImportExternalResponse(BaseModel):
 
     class Config:
         json_schema_extra = {"example": {"id": "507f1f77bcf86cd799439011"}}
+
+
+class PaginatedDocumentUploadsResponse(BaseModel):
+    documents: List[DocumentRetrieveResponseForPage]
+    next_cursor: Optional[str] = None
