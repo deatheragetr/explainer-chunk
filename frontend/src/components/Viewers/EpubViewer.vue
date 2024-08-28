@@ -65,7 +65,7 @@ const debounce = (fn: Function, delay: number) => {
 export default defineComponent({
   name: 'EpubViewer',
   props: {
-    epubUrl: {
+    contentUrl: {
       type: String,
       required: true
     }
@@ -115,12 +115,12 @@ export default defineComponent({
     }
 
     const loadEpub = async () => {
-      console.log('Loading epub...', props.epubUrl)
+      console.log('Loading epub...', props.contentUrl)
       try {
         clearViewer()
 
-        if (props.epubUrl) {
-          book.value = ePub(props.epubUrl, { openAs: 'epub' })
+        if (props.contentUrl) {
+          book.value = ePub(props.contentUrl, { openAs: 'epub' })
 
           await nextTick() // Wait for the DOM to update
           calculateViewportDimensions()
@@ -221,7 +221,7 @@ export default defineComponent({
       })
     })
 
-    watch(() => props.epubUrl, loadEpub)
+    watch(() => props.contentUrl, loadEpub)
 
     return {
       bookTitle,

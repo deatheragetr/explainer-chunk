@@ -12,7 +12,7 @@ import { defineComponent, ref, computed, watch } from 'vue'
 export default defineComponent({
   name: 'JSONViewer',
   props: {
-    jsonUrl: {
+    contentUrl: {
       type: String,
       required: true
     }
@@ -39,7 +39,7 @@ export default defineComponent({
     }
 
     watch(
-      () => props.jsonUrl,
+      () => props.contentUrl,
       (newUrl) => {
         if (newUrl) {
           loadJson(newUrl)

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
@@ -6,23 +7,60 @@ from controllers import (
     document_upload_controller,
     upload_controller,
     website_capture_controller,
+    websocket_controller,
+    ai_controller,
 )
-from background import websockets
-from background.websockets import redis_subscriber
-from config.redis import redis_client
+from background.subscribers.redis_subscriber import RedisSubscriber
+from config.redis import redis_pool, RedisType
+from config.mongo import mongo_manager
+from services.websocket_manager import get_websocket_manager
 import asyncio
 
 # From huey's documentation, this is recommended, even though it's not directly used in this file
 # https://huey.readthedocs.io/en/latest/imports.html#suggested-organization-of-code
 # from huey import huey  # type: ignore
-from background.jobs.capture_website_job import huey, capture_website  # type: ignore
+from background.huey_jobs.capture_website_job import huey, capture_website  # type: ignore
+from background.huey_jobs.process_document_job import process_document  # type: ignore
+from background.huey_jobs.summarize_document_job import summarize_document  # type: ignore
+
+from config.logger import setup_logging
+from db.indices.ensure_indices import ensure_indices_with_manager
+
+# Determine environment
+ENV = os.getenv("ENV", "development")
+
+# Setup logging based on environment
+if ENV == "production":
+    logger = setup_logging(log_level="INFO", log_to_file=True, log_file="app.log")
+else:
+    logger = setup_logging(log_level="DEBUG")  # More verbose for development
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    asyncio.create_task(redis_subscriber())
+
+    app.state.redis_pool = redis_pool
+    redis_client: RedisType = await app.state.redis_pool.get_client()
+    websocket_manager = get_websocket_manager()
+    app.state.websocket_manager = websocket_manager
+
+    await mongo_manager.connect()
+    redis_subscriber = RedisSubscriber(redis_client, websocket_manager)
+    app.state.redis_subscriber = redis_subscriber
+    redis_subscriber.task = asyncio.create_task(redis_subscriber.start())
+    asyncio.create_task(ensure_indices_with_manager())
+
+    logger.info("Application startup complete")
+
     yield
-    await redis_client.close()
+    logger.info("Application shutdown initiated")
+
+    await app.state.redis_pool.close()
+    await app.state.websocket_manager.shutdown()
+    await redis_subscriber.stop()
+
+    await mongo_manager.close()
+    logger.info("Application shutdown complete")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -36,11 +74,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-app.include_router(websockets.router)
+app.include_router(websocket_controller.router)
 app.include_router(website_capture_controller.router)
 app.include_router(upload_controller.router)
 app.include_router(document_upload_controller.router)
+app.include_router(ai_controller.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

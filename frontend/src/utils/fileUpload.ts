@@ -1,5 +1,9 @@
+import type { Ref } from 'vue'
 import axios, { type AxiosResponse } from 'axios'
-import { parallelLimit } from './parallelLimit'
+import { parallelLimit } from '@/utils/parallelLimit'
+import type { ImportProgress, ExtractionResult } from '@/types'
+import { extractTextFromFile } from '@/utils/textExtract'
+import { createProgressUpdater } from '@/utils/progressUpdater'
 
 const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks, minimum chunk size S3 allows
 const MAX_RETRIES = 3
@@ -98,21 +102,14 @@ async function generatePresignedUrl(
   return { presignedUrl: response.data.presigned_url }
 }
 
-interface ImportProgress {
-  task_id?: string
-  status: string
-  progress: number | null
-  payload: {
-    presigned_url?: string
-  }
-}
-
 export async function uploadLargeFile(
   file: File,
   fileType: string,
-  importProgress: ImportProgress,
+  importProgress: Ref<ImportProgress | null>,
   concurrency: number = 4
 ): Promise<uploadLargeFileResponse> {
+  const updateProgress = createProgressUpdater(importProgress)
+
   const { uploadId, fileKey } = await initiateMultipartUpload(file.name, fileType)
 
   // const parts: PartUploadResult[] = []
@@ -122,16 +119,17 @@ export async function uploadLargeFile(
   console.log('totalChunks', totalChunks)
   console.log('file.size', file.size)
 
-  importProgress.progress = 10
-  importProgress.status = 'preparing for upload'
+  updateProgress('preparing for upload', 10)
+
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE
     const end = Math.min(start + CHUNK_SIZE, file.size)
-    importProgress.progress = 10 + Math.floor(i / totalChunks) * 10
+    updateProgress('preparing for upload', 10 + Math.floor(i / totalChunks) * 10)
     chunks.push({ start, end, partNumber: i + 1 })
   }
 
-  importProgress.status = 'uploading'
+  updateProgress('uploading', 20)
+
   let chunksProcessed = 0
   const parts = await parallelLimit(chunks, concurrency, async (chunk) => {
     const { start, end, partNumber } = chunk
@@ -141,22 +139,29 @@ export async function uploadLargeFile(
     const partData = await retryOperation(() => uploadPart(presignedUrl, chunkData, partNumber))
 
     chunksProcessed++
-    importProgress.progress = 20 + Math.floor((chunksProcessed / totalChunks) * 30)
+    updateProgress('uploading', 20 + Math.floor((chunksProcessed / totalChunks) * 30))
     console.log(`Uploaded part ${partNumber} of ${totalChunks}`)
     return partData
   })
 
-  importProgress.progress = 55
+  updateProgress('completing upload', 55)
 
   await completeMultipartUpload(uploadId, fileKey, parts)
 
-  importProgress.progress = 70
+  const result: ExtractionResult = await extractTextFromFile(file, fileType, importProgress)
+  console.log('Metadata:', result.metadata)
+
+  updateProgress('finalizing', 70)
+
   const results = await axios.post('http://localhost:8000/document-uploads/', {
     file_name: file.name,
     file_type: fileType,
-    file_key: fileKey
+    file_key: fileKey,
+    extracted_text: result.text,
+    extracted_metadata: result.metadata || {}
   })
 
+  updateProgress('completed', 100)
   console.log('Upload completed successfully')
   return results.data
 }

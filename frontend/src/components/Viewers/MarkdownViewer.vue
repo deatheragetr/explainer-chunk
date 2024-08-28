@@ -14,7 +14,7 @@ import DOMPurify from 'dompurify'
 export default defineComponent({
   name: 'MarkdownViewer',
   props: {
-    markdownUrl: {
+    contentUrl: {
       type: String,
       required: true
     }
@@ -58,7 +58,7 @@ export default defineComponent({
     }
 
     watch(
-      () => props.markdownUrl,
+      () => props.contentUrl,
       (newUrl) => {
         if (newUrl) {
           loadMarkdown(newUrl)

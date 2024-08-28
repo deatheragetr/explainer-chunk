@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from bson import ObjectId
 from db.models.document_uploads import (
     MongoDocumentUpload,
@@ -16,11 +16,12 @@ from api.responses.document_upload import (
 from api.utils.s3_utils import verify_s3_object
 from typing import Annotated
 from config.environment import S3Settings
-from config.mongo import db
+from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pymongo.results import InsertOneResult
 from pymongo.errors import DuplicateKeyError
 from config.s3 import s3_client
+from background.huey_jobs.process_document_job import process_document
 
 s3_settings = S3Settings()
 router = APIRouter()
@@ -41,7 +42,10 @@ async def upload_document_from_import():
     "/document-uploads/",
     response_model=DocumentUploadResponse,
 )
-async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
+async def upload_document(
+    reqBody: Annotated[DocumentUploadRequest, Body()],
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
     # register file with S3 and save to MongoDB
     try:
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
@@ -69,7 +73,13 @@ async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
                 source=SourceType.FILE_UPLOAD,
                 s3_url=s3_url,
             ),
+            extracted_text=reqBody.extracted_text,
+            extracted_metadata=reqBody.extracted_metadata,
+            openai_assistants=[],
         )
+
+        # Kick of background job to process document
+        process_document(document_id=str(doc_id))
 
         try:
             result: InsertOneResult = await collection.insert_one(document)
@@ -91,24 +101,32 @@ async def upload_document(reqBody: Annotated[DocumentUploadRequest, Body()]):
 
 
 @router.get("/document-uploads/{document_id}", response_model=DocumentRetrieveResponse)
-async def get_document(document_id: str):
+async def get_document(
+    document_id: str, db: TypedAsyncIOMotorDatabase = Depends(get_db)
+):
     try:
         # Convert string to ObjectId
         obj_id = ObjectId(document_id)
 
         # Retrieve document from MongoDB
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
-        document = await collection.find_one({"_id": obj_id})
+        # Avoid fetching the entire document, with the potentially long extracted text
+        document = await collection.find_one(
+            {"_id": obj_id}, {"_id": 1, "file_details": 1}
+        )
 
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 
         try:
-            if document["file_details"]["s3_bucket"] == AllowedS3Buckets.PUBLIC_BUCKET.value:
+            if (
+                document["file_details"]["s3_bucket"]
+                == AllowedS3Buckets.PUBLIC_BUCKET.value
+            ):
                 # Web captures are public, so no need to generate pre-signed URL
                 presigned_url = document["file_details"]["s3_url"]
             else:
-                # Generate pre-signed URL 
+                # Generate pre-signed URL
                 presigned_url = s3_client.generate_presigned_url(
                     "get_object",
                     Params={

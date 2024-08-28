@@ -1,8 +1,14 @@
 <template>
   <div class="pdf-viewer" ref="pdfContainer">
     <div v-if="error" class="error-message">{{ error }}</div>
-    <div v-else-if="!pdfUrl" class="loading-message">Waiting for PDF...</div>
-    <vue-pdf-embed v-else text-layer annotation-layer :source="pdfUrl" :width="containerWidth" />
+    <div v-else-if="!contentUrl" class="loading-message">Waiting for PDF...</div>
+    <vue-pdf-embed
+      v-else
+      text-layer
+      annotation-layer
+      :source="contentUrl"
+      :width="containerWidth"
+    />
   </div>
 </template>
 
@@ -30,7 +36,7 @@ export default defineComponent({
   name: 'PDFViewer',
   components: { VuePdfEmbed },
   props: {
-    pdfUrl: {
+    contentUrl: {
       type: String,
       required: true
     }
@@ -50,9 +56,9 @@ export default defineComponent({
     const debouncedUpdateContainerWidth = debounce(updateContainerWidth, 100)
 
     watch(
-      () => props.pdfUrl,
-      (newUrl) => {
-        console.log('PDF URL changed:', newUrl)
+      () => props.contentUrl,
+      (newcontentUrl) => {
+        console.log('PDF contentUrl changed:', newcontentUrl)
         error.value = null
       }
     )

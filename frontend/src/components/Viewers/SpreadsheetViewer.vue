@@ -26,7 +26,7 @@ import * as XLSX from 'xlsx'
 export default defineComponent({
   name: 'SpreadsheetViewer',
   props: {
-    spreadsheetUrl: {
+    contentUrl: {
       type: String,
       required: true
     }
@@ -62,7 +62,7 @@ export default defineComponent({
     }
 
     watch(
-      () => props.spreadsheetUrl,
+      () => props.contentUrl,
       (newUrl) => {
         if (newUrl) {
           loadSpreadsheet(newUrl)

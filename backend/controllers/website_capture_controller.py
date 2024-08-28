@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from background.jobs.capture_website_job import capture_website
+from background.huey_jobs.capture_website_job import capture_website
 from api.requests.website_capture import WebsiteCaptureRequest
 from api.responses.website_capture import WebsiteCaptureResponse
-from huey.api import Result
 
 router = APIRouter()
 
@@ -11,9 +10,7 @@ router = APIRouter()
 async def capture_website_endpoint(request: WebsiteCaptureRequest):
     try:
         # Huey decorated tasks return a results object, which confuses the type checker: https://huey.readthedocs.io/en/latest/api.html#Result
-        print("About to capture website: ", request.url," , ", request.document_upload_id)
-        task = capture_website(request.url, request.document_upload_id)
-        print("Task: ", task)
+        capture_website(request.url, request.document_upload_id)
         return WebsiteCaptureResponse(
             url=request.url, document_upload_id=request.document_upload_id
         )

@@ -1,7 +1,7 @@
 <template>
   <div class="website-viewer">
     <iframe
-      :src="websiteUrl"
+      :src="contentUrl"
       class="w-full h-[calc(100vh-200px)]"
       sandbox="allow-scripts allow-same-origin"
       referrerpolicy="no-referrer"
@@ -15,7 +15,7 @@ import { defineComponent } from 'vue'
 export default defineComponent({
   name: 'WebsiteViewer',
   props: {
-    websiteUrl: {
+    contentUrl: {
       type: String,
       required: true
     }

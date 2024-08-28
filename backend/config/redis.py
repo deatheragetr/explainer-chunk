@@ -1,10 +1,9 @@
-from redis.asyncio import Redis
+from redis.asyncio import Redis, ConnectionPool
 from typing import TYPE_CHECKING
+from config.logger import get_logger
 
-# Get a runtime error on start up:
-# raise TypeError(f"{cls} is not a generic class")
-# TypeError: <class 'redis.asyncio.client.Redis'> is not a generic class
-# If I don't use case and directly set redis_client to Redis[bytes]
+logger = get_logger()
+
 host = "localhost"
 port = 6379
 db = 0
@@ -16,7 +15,19 @@ if TYPE_CHECKING:
 else:
     RedisType = Redis
 
-redis_client = Redis(host=host, port=port, db=db)
+
+class RedisPool:
+    def __init__(self):
+        self.pool = ConnectionPool(host=host, port=port, db=db)
+        self.client = Redis(connection_pool=self.pool)
+
+    async def get_client(self) -> RedisType:
+        return self.client
+
+    async def close(self):
+        await self.client.close()
+        await self.pool.disconnect()
+        logger.info("Closed Redis connection")
 
 
-
+redis_pool = RedisPool()
