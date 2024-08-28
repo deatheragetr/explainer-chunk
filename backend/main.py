@@ -24,6 +24,7 @@ from background.huey_jobs.process_document_job import process_document  # type: 
 from background.huey_jobs.summarize_document_job import summarize_document  # type: ignore
 
 from config.logger import setup_logging
+from db.indices.ensure_indices import ensure_indices_with_manager
 
 # Determine environment
 ENV = os.getenv("ENV", "development")
@@ -47,6 +48,8 @@ async def lifespan(app: FastAPI):
     redis_subscriber = RedisSubscriber(redis_client, websocket_manager)
     app.state.redis_subscriber = redis_subscriber
     redis_subscriber.task = asyncio.create_task(redis_subscriber.start())
+    asyncio.create_task(ensure_indices_with_manager())
+
     logger.info("Application startup complete")
 
     yield

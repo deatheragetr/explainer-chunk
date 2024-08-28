@@ -1,48 +1,18 @@
 from bson import ObjectId
-from typing import List, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from config.ai_models import ModelName
-from config.environment import OpenAISettings
 from motor.motor_asyncio import AsyncIOMotorCollection
 from db.models.document_uploads import MongoDocumentUpload
-from db.models.chat import MongoChat
 from services.chat_message_service import ChatMessageService
 from background.huey_jobs.summarize_document_job import summarize_document
 from background.huey_jobs.explain_text_job import explain_text
 from background.huey_jobs.chat_job import chat_with_rag
+from api.requests.ai import SummarizeRequest, ExplainRequest, ChatRequest
+from api.responses.ai import ChatHistoryResponse, ChatMessageResponse
 
 router = APIRouter()
-
-open_ai_settings = OpenAISettings()
-
-
-class SummarizeRequest(BaseModel):
-    model: ModelName
-
-
-class ExplainRequest(BaseModel):
-    highlighted_text: str
-    model: ModelName
-
-
-class ChatRequest(BaseModel):
-    message_content: str
-    model: ModelName
-
-
-class ChatMessageResponse(BaseModel):
-    message_id: str
-    content: str
-    role: str
-    created_at: str
-    conversation_id: str
-
-
-class ChatHistoryResponse(BaseModel):
-    messages: List[ChatMessageResponse]
-    next_before: Optional[str]
 
 
 @router.post("/documents/{document_upload_id}/summary")
@@ -111,9 +81,6 @@ async def create_chat_message(
     return {"message": "Chat task started"}
 
 
-@router.get(
-    "/documents/{document_upload_id}/chat/messages", response_model=ChatHistoryResponse
-)
 @router.get(
     "/documents/{document_upload_id}/chat/messages", response_model=ChatHistoryResponse
 )
