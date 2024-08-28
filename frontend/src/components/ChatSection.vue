@@ -116,7 +116,16 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import {
+  defineComponent,
+  ref,
+  onMounted,
+  onUnmounted,
+  watch,
+  nextTick,
+  onActivated,
+  onDeactivated
+} from 'vue'
 import axios from 'axios'
 import ModelSelector from './ModelSelector.vue'
 import DOMPurify from 'dompurify'
@@ -154,6 +163,22 @@ export default defineComponent({
     let socket: WebSocket | null = null
     let reconnectAttempts = 0
     const MAX_RECONNECT_ATTEMPTS = 5
+    const scrollPosition = ref(0)
+    const isInitialLoad = ref(true)
+
+    const saveScrollPosition = () => {
+      if (chatContainer.value) {
+        scrollPosition.value = chatContainer.value.scrollTop
+      }
+    }
+
+    const restoreScrollPosition = () => {
+      nextTick(() => {
+        if (chatContainer.value) {
+          chatContainer.value.scrollTop = scrollPosition.value
+        }
+      })
+    }
 
     const connectWebSocket = () => {
       socket = new WebSocket(
@@ -198,21 +223,30 @@ export default defineComponent({
 
     const updateChatMessages = (text: string, replace: boolean = false) => {
       if (
-        replace ||
         chatMessages.value.length === 0 ||
         chatMessages.value[chatMessages.value.length - 1].role !== 'assistant'
       ) {
-        chatMessages.value.push({
-          message_id: Date.now().toString(),
+        // Start a new assistant message
+        const newMessage: ChatMessage = {
+          message_id: `temp-${Date.now()}`,
           content: text,
           role: 'assistant',
           created_at: new Date().toISOString(),
           conversation_id: props.documentUploadId
-        })
+        }
+        chatMessages.value.push(newMessage)
       } else {
-        chatMessages.value[chatMessages.value.length - 1].content += text
+        // Update the existing assistant message
+        const lastMessage = chatMessages.value[chatMessages.value.length - 1]
+        if (replace) {
+          // Replace the entire content when the message is complete
+          lastMessage.content = text
+        } else {
+          // Append the new text for incremental updates
+          lastMessage.content += text
+        }
       }
-      scrollToBottom()
+      scrollToBottom(true)
     }
 
     const scrollToBottom = (smooth = false) => {
@@ -231,16 +265,21 @@ export default defineComponent({
         isLoading.value = true
         error.value = ''
         const userMessage = userInput.value.trim()
-        chatMessages.value.push({
-          message_id: Date.now().toString(),
+        const newMessage: ChatMessage = {
+          message_id: `temp-${Date.now()}`,
           content: userMessage,
           role: 'user',
           created_at: new Date().toISOString(),
           conversation_id: props.documentUploadId
-        })
+        }
+        chatMessages.value.push(newMessage)
         userInput.value = ''
 
         try {
+          // Ensure WebSocket is connected
+          if (!socket || socket.readyState !== WebSocket.OPEN) {
+            connectWebSocket()
+          }
           await axios.post(
             `http://localhost:8000/documents/${props.documentUploadId}/chat/messages`,
             {
@@ -249,10 +288,7 @@ export default defineComponent({
             }
           )
 
-          // Ensure WebSocket is connected
-          if (!socket || socket.readyState !== WebSocket.OPEN) {
-            connectWebSocket()
-          }
+          scrollToBottom(true)
         } catch (err) {
           handleError('Failed to send message. Please try again.')
         }
@@ -268,7 +304,7 @@ export default defineComponent({
     }
 
     const formatMessage = (text: string) => {
-      const html = marked(text)
+      const html = marked.parse(text)
       return DOMPurify.sanitize(html)
     }
 
@@ -298,7 +334,7 @@ export default defineComponent({
         chatMessages.value = history.messages.reverse()
         nextBefore.value = history.next_before
         noMoreHistory.value = !history.next_before
-        scrollToBottom() // Scroll to bottom after loading initial history
+        scrollToBottom()
       }
     }
 
@@ -311,11 +347,16 @@ export default defineComponent({
 
       if (history) {
         const previousHeight = chatContainer.value?.scrollHeight || 0
-        chatMessages.value = [...history.messages.reverse(), ...chatMessages.value]
+        const newMessages = history.messages
+          .reverse()
+          .filter(
+            (msg: ChatMessage) =>
+              !chatMessages.value.some((existingMsg) => existingMsg.message_id === msg.message_id)
+          )
+        chatMessages.value = [...newMessages, ...chatMessages.value]
         nextBefore.value = history.next_before
         noMoreHistory.value = !history.next_before
 
-        // Maintain scroll position after loading older messages
         nextTick(() => {
           if (chatContainer.value) {
             const newHeight = chatContainer.value.scrollHeight
@@ -339,12 +380,25 @@ export default defineComponent({
       nextBefore.value = null
       noMoreHistory.value = false
       await loadInitialChatHistory()
-      // No need to call scrollToBottom here as it's called in loadInitialChatHistory
     }
 
     onMounted(() => {
-      connectWebSocket()
-      loadInitialChatHistory()
+      if (isInitialLoad.value) {
+        loadInitialChatHistory().then(() => {
+          scrollToBottom()
+          isInitialLoad.value = false
+        })
+      }
+    })
+
+    onActivated(() => {
+      if (!isInitialLoad.value) {
+        restoreScrollPosition()
+      }
+    })
+
+    onDeactivated(() => {
+      saveScrollPosition()
     })
 
     onUnmounted(() => {
@@ -353,7 +407,16 @@ export default defineComponent({
       }
     })
 
-    watch(chatMessages, () => scrollToBottom(true))
+    watch(chatMessages, () => {
+      if (
+        chatContainer.value &&
+        chatContainer.value.scrollHeight -
+          (chatContainer.value.scrollTop + chatContainer.value.clientHeight) <
+          100
+      ) {
+        scrollToBottom(true)
+      }
+    })
 
     return {
       chatMessages,
@@ -367,7 +430,9 @@ export default defineComponent({
       chatContainer,
       noMoreHistory,
       handleScroll,
-      handleModelChange
+      handleModelChange,
+      saveScrollPosition,
+      restoreScrollPosition
     }
   }
 })
