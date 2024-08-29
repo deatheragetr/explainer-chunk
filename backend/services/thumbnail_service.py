@@ -1,10 +1,11 @@
 from bson import ObjectId
-from typing import Optional
+from typing import Optional, List, Tuple
 from PIL import Image, ImageDraw, ImageFont
 import io
 import tempfile
 import os
 import base64
+import math
 from playwright.async_api import async_playwright
 from mypy_boto3_s3.client import S3Client
 from config.mongo import TypedAsyncIOMotorDatabase
@@ -38,6 +39,27 @@ class ThumbnailService:
         self.poppler_path = poppler_settings.poppler_path
         self.playwright = None
         self.browser = None
+        self.title_font = self.load_font(size=20)
+        self.body_font = self.load_font(size=12)
+
+    def load_font(self, size: int) -> ImageFont.FreeTypeFont:
+        # List of font files to try, in order of preference
+        font_files = [
+            "Arial.ttf",
+            "Helvetica.ttf",
+            "DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Common location on Linux
+            "/System/Library/Fonts/Helvetica.ttc",  # Common location on macOS
+        ]
+
+        for font_file in font_files:
+            try:
+                return ImageFont.truetype(font_file, size)
+            except IOError:
+                continue
+
+        # If all else fails, use the default font
+        return ImageFont.load_default()
 
     async def initialize_playwright(self):
         if not self.playwright:
@@ -225,30 +247,155 @@ class ThumbnailService:
         finally:
             os.unlink(temp_file_path)
 
+    def read_csv(self, file_content: bytes) -> List:
+        csv_content = io.StringIO(file_content.decode("utf-8"))
+        csv_reader = csv.reader(csv_content)
+        return [row for row in csv_reader][:67]  # Limit to first 10 rows
+
+    def read_excel(self, file_content: bytes) -> List:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
+
+        try:
+            wb = load_workbook(filename=temp_file_path, read_only=True)
+            sheet = wb.active
+            return [
+                [str(cell.value) if cell.value is not None else "" for cell in row]
+                for row in sheet.iter_rows(max_row=67)
+            ]
+        finally:
+            os.unlink(temp_file_path)
+
     async def generate_spreadsheet_thumbnail(
         self, file_content: bytes, file_type: str
     ) -> Image.Image:
-        text_content = ""
         if file_type == "csv":
-            csv_content = io.StringIO(file_content.decode("utf-8"))
-            csv_reader = csv.reader(csv_content)
-            for _ in range(5):  # Get first 5 rows
-                row = next(csv_reader, None)
-                if row:
-                    text_content += ",".join(row) + "\n"
+            data = self.read_csv(file_content)
         elif file_type == "excel":
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
-                temp_file.write(file_content)
-                temp_file_path = temp_file.name
-            try:
-                wb = load_workbook(filename=temp_file_path)
-                sheet = wb.active
-                for row in sheet.iter_rows(max_row=5, values_only=True):
-                    text_content += ",".join(str(cell) for cell in row) + "\n"
-            finally:
-                os.unlink(temp_file_path)
+            data = self.read_excel(file_content)
+        else:
+            return self.create_error_thumbnail("Unsupported spreadsheet type")
 
-        return self.text_to_image(text_content)
+        return self.create_spreadsheet_image(data)
+
+    def create_spreadsheet_image(self, data: List[List[str]]) -> Image.Image:
+        MAX_WIDTH = 800
+        MAX_HEIGHT = 600
+        PADDING = 5
+        MIN_CELL_WIDTH = 40
+        MIN_CELL_HEIGHT = 20
+
+        num_rows = len(data)
+        num_cols = len(data[0]) if data else 0
+
+        # Create a temporary image to calculate text dimensions
+        temp_img = Image.new("RGB", (1, 1), color="white")
+        draw = ImageDraw.Draw(temp_img)
+
+        # Calculate cell dimensions
+        col_widths = self.calculate_column_widths(data, draw, MIN_CELL_WIDTH)
+        row_height = max(
+            MIN_CELL_HEIGHT, self.calculate_row_height(data[0], draw) + PADDING
+        )
+
+        # Calculate image dimensions
+        img_width = sum(col_widths) + PADDING * (num_cols + 1)
+        img_height = row_height * num_rows + PADDING * (num_rows + 1)
+
+        # Scale down if necessary
+        scale = min(
+            1,
+            MIN_CELL_HEIGHT / row_height,
+            MAX_WIDTH / img_width,
+            MAX_HEIGHT / img_height,
+        )
+
+        img_width = math.ceil(img_width * scale)
+        img_height = math.ceil(img_height * scale)
+        row_height = math.ceil(row_height * scale)
+        col_widths = [math.ceil(w * scale) for w in col_widths]
+
+        # Create the actual image
+        img = Image.new("RGB", (img_width, img_height), color="white")
+        draw = ImageDraw.Draw(img)
+
+        # Draw cells
+        y = PADDING
+        for row in data:
+            x = PADDING
+            for i, cell in enumerate(row):
+                cell_width = col_widths[i]
+                self.draw_cell(draw, x, y, cell_width, row_height, cell, scale)
+                x += cell_width + PADDING
+            y += row_height + PADDING
+
+        # Resize to 200x200 while maintaining aspect ratio and padding with white
+        img = self.resize_and_pad(img, (200, 200))
+
+        return img
+
+    def calculate_column_widths(
+        self, data: List[List[str]], draw: ImageDraw.Draw, min_width: int
+    ) -> List[int]:
+        col_widths = [min_width] * len(data[0])
+        for row in data:
+            for i, cell in enumerate(row):
+                text_width = draw.textbbox((0, 0), str(cell), font=self.body_font)[2]
+                col_widths[i] = max(col_widths[i], text_width + 10)  # Add some padding
+        return col_widths
+
+    def calculate_row_height(self, row: List[str], draw: ImageDraw.Draw) -> int:
+        return max(
+            draw.textbbox((0, 0), str(cell), font=self.body_font)[3] for cell in row
+        )
+
+    def draw_cell(
+        self,
+        draw: ImageDraw.Draw,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        content: str,
+        scale: float,
+    ):
+        # Draw cell border
+        draw.rectangle([x, y, x + width, y + height], outline="lightgray")
+
+        # Draw cell content
+        text = str(content)
+        if scale < 1:
+            text = self.truncate_text(text, width, draw)
+        text_bbox = draw.textbbox((0, 0), text, font=self.body_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_x = x + (width - text_width) / 2
+        text_y = y + (height - text_height) / 2
+        draw.text((text_x, text_y), text, fill="black", font=self.body_font)
+
+    def truncate_text(self, text: str, max_width: int, draw: ImageDraw.Draw) -> str:
+        if draw.textbbox((0, 0), text, font=self.body_font)[2] <= max_width:
+            return text
+        while (
+            len(text) > 1
+            and draw.textbbox((0, 0), text + "...", font=self.body_font)[2] > max_width
+        ):
+            text = text[:-1]
+        return text + "..." if len(text) > 1 else text
+
+    def resize_and_pad(self, img: Image.Image, size: Tuple[int, int]) -> Image.Image:
+        # Resize image while maintaining aspect ratio
+        img.thumbnail(size, Image.LANCZOS)
+
+        # Create a white background image
+        background = Image.new("RGB", size, (255, 255, 255))
+
+        # Paste the resized image onto the center of the background
+        offset = ((size[0] - img.width) // 2, (size[1] - img.height) // 2)
+        background.paste(img, offset)
+
+        return background
 
     async def generate_text_thumbnail(
         self, file_content: bytes, file_type: str
