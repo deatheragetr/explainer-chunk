@@ -1,6 +1,7 @@
 from bson import ObjectId
 from typing import Optional, List, Tuple
 from PIL import Image, ImageDraw, ImageFont
+from PIL.Image import Resampling
 import io
 import tempfile
 import os
@@ -42,7 +43,7 @@ class ThumbnailService:
         self.title_font = self.load_font(size=20)
         self.body_font = self.load_font(size=12)
 
-    def load_font(self, size: int) -> ImageFont.FreeTypeFont:
+    def load_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         # List of font files to try, in order of preference
         font_files = [
             "Arial.ttf",
@@ -156,7 +157,7 @@ class ThumbnailService:
             data_uri = f"data:text/html;base64,{base64.b64encode(html_content.encode()).decode()}"
 
             # Create a new page with strict Content Security Policy
-            page = await self.browser.new_page(
+            page = await self.browser.new_page(  # type: ignore
                 java_script_enabled=False,  # Disable JavaScript execution
                 bypass_csp=False,  # Respect Content Security Policy
             )
@@ -193,7 +194,7 @@ class ThumbnailService:
                     new_height = int(200 / aspect_ratio)
 
                 # Resize the image, maintaining aspect ratio
-                img = img.resize((new_width, new_height), Image.LANCZOS)
+                img = img.resize((new_width, new_height), Resampling.LANCZOS)
 
                 # Create a new 200x200 white image
                 thumbnail = Image.new("RGB", (200, 200), (255, 255, 255))
@@ -222,7 +223,7 @@ class ThumbnailService:
             pages = convert_from_bytes(
                 file_content, first_page=1, last_page=1, poppler_path=self.poppler_path
             )
-            thumbnail = pages[0].resize((200, 200), Image.LANCZOS)
+            thumbnail = pages[0].resize((200, 200), Resampling.LANCZOS)
             return thumbnail
         finally:
             os.unlink(temp_file_path)
@@ -237,7 +238,7 @@ class ThumbnailService:
             for item in book.get_items_of_type(ebooklib.ITEM_COVER):
                 if item.media_type.startswith("image/"):
                     cover = Image.open(io.BytesIO(item.content))
-                    return cover.resize((200, 200), Image.LANCZOS)
+                    return cover.resize((200, 200), Resampling.LANCZOS)
 
             # If no cover image found, generate a default thumbnail
             return await self.generate_default_thumbnail("epub")
@@ -247,12 +248,12 @@ class ThumbnailService:
         finally:
             os.unlink(temp_file_path)
 
-    def read_csv(self, file_content: bytes) -> List:
+    def read_csv(self, file_content: bytes) -> List[List[str]]:
         csv_content = io.StringIO(file_content.decode("utf-8"))
         csv_reader = csv.reader(csv_content)
         return [row for row in csv_reader][:67]  # Limit to first 10 rows
 
-    def read_excel(self, file_content: bytes) -> List:
+    def read_excel(self, file_content: bytes) -> List[List[str]]:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
             temp_file.write(file_content)
             temp_file_path = temp_file.name
@@ -260,12 +261,18 @@ class ThumbnailService:
         try:
             wb = load_workbook(filename=temp_file_path, read_only=True)
             sheet = wb.active
+            if sheet is None:
+                return []  # Return an empty list if there's no active sheet
             return [
                 [str(cell.value) if cell.value is not None else "" for cell in row]
                 for row in sheet.iter_rows(max_row=67)
             ]
         finally:
             os.unlink(temp_file_path)
+
+    # TODO: REMOVE?
+    def create_error_thumbnail(self, error_message: str) -> Image.Image:
+        return self.text_to_image(error_message, "Error")
 
     async def generate_spreadsheet_thumbnail(
         self, file_content: bytes, file_type: str
@@ -336,7 +343,7 @@ class ThumbnailService:
         return img
 
     def calculate_column_widths(
-        self, data: List[List[str]], draw: ImageDraw.Draw, min_width: int
+        self, data: List[List[str]], draw: ImageDraw.ImageDraw, min_width: int
     ) -> List[int]:
         col_widths = [min_width] * len(data[0])
         for row in data:
@@ -345,14 +352,14 @@ class ThumbnailService:
                 col_widths[i] = max(col_widths[i], text_width + 10)  # Add some padding
         return col_widths
 
-    def calculate_row_height(self, row: List[str], draw: ImageDraw.Draw) -> int:
+    def calculate_row_height(self, row: List[str], draw: ImageDraw.ImageDraw) -> int:
         return max(
             draw.textbbox((0, 0), str(cell), font=self.body_font)[3] for cell in row
         )
 
     def draw_cell(
         self,
-        draw: ImageDraw.Draw,
+        draw: ImageDraw.ImageDraw,
         x: int,
         y: int,
         width: int,
@@ -372,9 +379,11 @@ class ThumbnailService:
         text_height = text_bbox[3] - text_bbox[1]
         text_x = x + (width - text_width) / 2
         text_y = y + (height - text_height) / 2
-        draw.text((text_x, text_y), text, fill="black", font=self.body_font)
+        draw.text((text_x, text_y), str(text), fill="black", font=self.body_font)
 
-    def truncate_text(self, text: str, max_width: int, draw: ImageDraw.Draw) -> str:
+    def truncate_text(
+        self, text: str, max_width: int, draw: ImageDraw.ImageDraw
+    ) -> str:
         if draw.textbbox((0, 0), text, font=self.body_font)[2] <= max_width:
             return text
         while (
@@ -386,7 +395,7 @@ class ThumbnailService:
 
     def resize_and_pad(self, img: Image.Image, size: Tuple[int, int]) -> Image.Image:
         # Resize image while maintaining aspect ratio
-        img.thumbnail(size, Image.LANCZOS)
+        img.thumbnail(size, Resampling.LANCZOS)
 
         # Create a white background image
         background = Image.new("RGB", size, (255, 255, 255))
