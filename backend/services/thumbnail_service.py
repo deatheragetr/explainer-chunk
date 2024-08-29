@@ -1,8 +1,11 @@
 from bson import ObjectId
+from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 import io
 import tempfile
 import os
+import base64
+from playwright.async_api import async_playwright
 from mypy_boto3_s3.client import S3Client
 from config.mongo import TypedAsyncIOMotorDatabase
 from config.environment import S3Settings
@@ -23,6 +26,7 @@ from docx import Document
 from utils.file_type_normalizer import supported_file_types
 from config.environment import PopplerSettings
 
+
 poppler_settings = PopplerSettings()
 
 
@@ -32,6 +36,19 @@ class ThumbnailService:
         self.s3_client = s3_client
         self.s3_settings = S3Settings()
         self.poppler_path = poppler_settings.poppler_path
+        self.playwright = None
+        self.browser = None
+
+    async def initialize_playwright(self):
+        if not self.playwright:
+            self.playwright = await async_playwright().start()
+            self.browser = await self.playwright.chromium.launch()
+
+    async def close_playwright(self):
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
 
     async def generate_and_store_thumbnail(self, document_upload_id: str) -> None:
         document = await self.get_document_upload(document_upload_id)
@@ -91,16 +108,88 @@ class ThumbnailService:
     ) -> Image.Image:
         if file_type == "pdf":
             return await self.generate_pdf_thumbnail(file_content)
+        if file_type == "html":
+            html_content = file_content.decode("utf-8")
+            thumbnail = await self.generate_html_thumbnail(html_content)
+            if thumbnail:
+                return thumbnail
+            else:
+                return self.text_to_image("HTML File (Preview Failed)", file_type)
         elif file_type == "epub":
             return await self.generate_ebook_thumbnail(file_content)
         elif file_type in ["csv", "excel"]:
             return await self.generate_spreadsheet_thumbnail(file_content, file_type)
-        elif file_type in ["json", "markdown", "html", "text"]:
+        elif file_type in ["json", "markdown", "text"]:
             return await self.generate_text_thumbnail(file_content, file_type)
         elif file_type == "word":
             return await self.generate_word_thumbnail(file_content)
         else:
             return await self.generate_default_thumbnail(file_type)
+
+    async def generate_html_thumbnail(self, html_content: str) -> Optional[Image.Image]:
+        await self.initialize_playwright()
+
+        try:
+            # Create a data URI for the HTML content
+            data_uri = f"data:text/html;base64,{base64.b64encode(html_content.encode()).decode()}"
+
+            # Create a new page with strict Content Security Policy
+            page = await self.browser.new_page(
+                java_script_enabled=False,  # Disable JavaScript execution
+                bypass_csp=False,  # Respect Content Security Policy
+            )
+
+            # Set a strict Content Security Policy
+            await page.set_extra_http_headers(
+                {
+                    "Content-Security-Policy": "default-src 'none'; img-src data: http: https:; style-src 'unsafe-inline' http: https:; font-src data: http: https:;"
+                }
+            )
+
+            # Set viewport size
+            await page.set_viewport_size({"width": 1600, "height": 1600})
+
+            # Navigate to the data URI
+            await page.goto(data_uri, wait_until="networkidle")
+
+            # Take a screenshot
+            screenshot = await page.screenshot(full_page=False)
+            await page.close()
+
+            # Process the screenshot to create a 200x200 thumbnail
+            with Image.open(io.BytesIO(screenshot)) as img:
+                img = img.convert("RGB")
+
+                # Calculate the aspect ratio
+                aspect_ratio = img.width / img.height
+
+                if aspect_ratio > 1:  # Width is greater than height
+                    new_width = int(200 * aspect_ratio)
+                    new_height = 200
+                else:  # Height is greater than or equal to width
+                    new_width = 200
+                    new_height = int(200 / aspect_ratio)
+
+                # Resize the image, maintaining aspect ratio
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+
+                # Create a new 200x200 white image
+                thumbnail = Image.new("RGB", (200, 200), (255, 255, 255))
+
+                # Calculate position to paste resized image centered
+                paste_x = (200 - new_width) // 2
+                paste_y = (200 - new_height) // 2
+
+                # Paste the resized image onto the white background
+                thumbnail.paste(img, (paste_x, paste_y))
+
+                return thumbnail
+
+        except Exception as e:
+            print(f"Error generating HTML thumbnail: {e}")
+            return None
+        finally:
+            await self.close_playwright()
 
     async def generate_pdf_thumbnail(self, file_content: bytes) -> Image.Image:
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
@@ -117,11 +206,24 @@ class ThumbnailService:
             os.unlink(temp_file_path)
 
     async def generate_ebook_thumbnail(self, file_content: bytes) -> Image.Image:
-        book = epub.read_epub(io.BytesIO(file_content))
-        for item in book.get_items_of_type(ebooklib.ITEM_COVER):
-            cover = Image.open(io.BytesIO(item.content))
-            return cover.resize((200, 200), Image.LANCZOS)
-        return await self.generate_default_thumbnail("epub")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".epub") as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
+
+        try:
+            book = epub.read_epub(temp_file_path)
+            for item in book.get_items_of_type(ebooklib.ITEM_COVER):
+                if item.media_type.startswith("image/"):
+                    cover = Image.open(io.BytesIO(item.content))
+                    return cover.resize((200, 200), Image.LANCZOS)
+
+            # If no cover image found, generate a default thumbnail
+            return await self.generate_default_thumbnail("epub")
+        except Exception as e:
+            print(f"Error processing epub: {e}")
+            return await self.generate_default_thumbnail("epub")
+        finally:
+            os.unlink(temp_file_path)
 
     async def generate_spreadsheet_thumbnail(
         self, file_content: bytes, file_type: str
@@ -201,7 +303,11 @@ class ThumbnailService:
         lines = []
         current_line = []
         for word in words:
-            if d.textsize(" ".join(current_line + [word]), font=font)[0] <= 180:
+            # Use textbbox instead of textsize
+            left, top, right, bottom = d.textbbox(
+                (0, 0), " ".join(current_line + [word]), font=font
+            )
+            if right - left <= 180:
                 current_line.append(word)
             else:
                 lines.append(" ".join(current_line))
@@ -211,8 +317,9 @@ class ThumbnailService:
         # Draw wrapped text
         y = start_y
         for line in lines:
+            left, top, right, bottom = d.textbbox((0, 0), line, font=font)
             d.text((10, y), line, fill="black", font=font)
-            y += font.getsize(line)[1] + 2
+            y += bottom - top + 2
             if y > 190:  # Stop if we've reached the bottom of the image
                 break
 

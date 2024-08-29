@@ -215,10 +215,13 @@ async def get_document_uploads(
 
 
 def generate_presigned_url(
-    file_details: Union[MongoFileDetails, ThumbnailDetails], s3_client: S3Client
+    file_details: Union[MongoFileDetails, ThumbnailDetails, None], s3_client: S3Client
 ) -> str:
+    # conditional checks because file/thumbnail details are generated in the background and may not
+    # yet be present when this function is called
+    if file_details is None:
+        return ""
     if "s3_bucket" not in file_details or "file_key" not in file_details:
-        # Added conditional check for backwards compatability
         return ""
     try:
         if file_details["s3_bucket"] == AllowedS3Buckets.PUBLIC_BUCKET.value:

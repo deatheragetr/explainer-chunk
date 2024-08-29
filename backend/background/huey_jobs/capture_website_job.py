@@ -103,7 +103,7 @@ async def async_capture(url: str, document_upload_id: str):
                         "message": f"Unsupported file type: {normalized_type}",
                     }
 
-            generate_thumbnail()
+            generate_thumbnail(document_upload_id)
             return result
         except Exception as e:
             await progress_updater.error()
