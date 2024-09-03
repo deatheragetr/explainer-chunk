@@ -411,8 +411,15 @@ class ThumbnailService:
     ) -> Image.Image:
         text_content = file_content.decode("utf-8")
         if file_type == "json":
-            parsed = json.loads(text_content)
-            text_content = json.dumps(parsed, indent=2)[:500]  # First 500 chars
+            try:
+                parsed = json.loads(text_content)
+                # Pretty print JSON with indentation
+                text_content = json.dumps(parsed, indent=2)
+                # Limit to approximately 30 lines
+                lines = text_content.split("\n")[:30]
+                text_content = "\n".join(lines)
+            except json.JSONDecodeError:
+                text_content = "Invalid JSON content"
         elif file_type == "markdown":
             html = markdown.markdown(text_content)
             text_content = BeautifulSoup(html, "html.parser").get_text()[:500]
@@ -421,7 +428,7 @@ class ThumbnailService:
         elif file_type == "text":
             text_content = text_content[:500]
 
-        return self.text_to_image(text_content)
+        return self.text_to_image(text_content, file_type.upper())
 
     async def generate_word_thumbnail(self, file_content: bytes) -> Image.Image:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
@@ -449,34 +456,31 @@ class ThumbnailService:
 
         # Draw title if provided
         if title:
-            d.text((10, 10), title, fill="black", font=font)
-            start_y = 30
+            d.text((10, 5), title, fill="black", font=font)
+            start_y = 25
         else:
             start_y = 10
 
-        # Wrap text
-        words = text.split()
-        lines = []
-        current_line = []
-        for word in words:
-            # Use textbbox instead of textsize
-            left, top, right, bottom = d.textbbox(
-                (0, 0), " ".join(current_line + [word]), font=font
-            )
-            if right - left <= 180:
-                current_line.append(word)
-            else:
-                lines.append(" ".join(current_line))
-                current_line = [word]
-        lines.append(" ".join(current_line))
+        # Calculate maximum characters per line
+        max_width = 290
+        char_width = d.textbbox((0, 0), "A", font=font)[2]
+        max_chars = max_width // char_width
 
-        # Draw wrapped text
+        # Draw text
         y = start_y
-        for line in lines:
-            left, top, right, bottom = d.textbbox((0, 0), line, font=font)
-            d.text((10, y), line, fill="black", font=font)
-            y += bottom - top + 2
-            if y > 190:  # Stop if we've reached the bottom of the image
+        for line in text.split("\n"):
+            # Preserve indentation
+            indent = len(line) - len(line.lstrip())
+            indent_space = " " * indent
+
+            # Truncate line if it's too long
+            if len(line) > max_chars:
+                line = line[: max_chars - 3] + "..."
+
+            d.text((5, y), indent_space + line.lstrip(), fill="black", font=font)
+            y += 12
+
+            if y > 195:  # Stop if we've reached the bottom of the image
                 break
 
         return img
