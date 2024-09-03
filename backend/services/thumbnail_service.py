@@ -436,17 +436,139 @@ class ThumbnailService:
 
         try:
             doc = Document(temp_file_path)
-            text_content = ""
-            for paragraph in doc.paragraphs[:10]:  # Get first 10 paragraphs
-                text_content += paragraph.text + "\n"
+            img = Image.new("RGB", (500, 500), color="white")
+            draw = ImageDraw.Draw(img)
 
-            text_content = text_content.strip()[:500]  # Limit to 500 characters
-            return self.text_to_image(text_content, "Word Document")
+            y = 10
+            for paragraph in doc.paragraphs[:30]:  # Limit to first 30 paragraphs
+                if y > 480:  # Stop if we've reached the bottom of the image
+                    break
+
+                # Determine font based on paragraph style
+                if paragraph.style.name.startswith("Heading"):
+                    font = self.title_font
+                    fill_color = "navy"
+                else:
+                    font = self.body_font
+                    fill_color = "black"
+
+                # Wrap text to fit within image width
+                wrapped_text = self.wrap_text(paragraph.text, 490, font)
+
+                for line in wrapped_text:
+                    draw.text((10, y), line, font=font, fill=fill_color)
+                    y += font.size + 2
+
+                y += 5  # Add some space between paragraphs
+
+            # If there are images in the document, try to include a small version of the first image
+            for rel in doc.part.rels.values():
+                if "image" in rel.target_ref:
+                    image_path = os.path.join(
+                        os.path.dirname(temp_file_path), rel.target_ref
+                    )
+                    if os.path.exists(image_path):
+                        with Image.open(image_path) as doc_img:
+                            doc_img.thumbnail((150, 150))
+                            img.paste(doc_img, (340, 340))
+                        break  # Only include the first image
+
+            return img
+
         except Exception as e:
             print(f"Error processing Word document: {e}")
-            return await self.generate_default_thumbnail("word")
+            return self.text_to_image("Error: Unable to process Word document", "DOCX")
         finally:
             os.unlink(temp_file_path)
+
+    def wrap_text(
+        self, text: str, max_width: int, font: ImageFont.FreeTypeFont
+    ) -> List[str]:
+        lines = []
+        for paragraph in text.split("\n"):
+            line = []
+            for word in paragraph.split():
+                if font.getlength(" ".join(line + [word])) <= max_width:
+                    line.append(word)
+                else:
+                    lines.append(" ".join(line))
+                    line = [word]
+            lines.append(" ".join(line))
+        return line
+
+    async def generate_word_thumbnail(self, file_content: bytes) -> Image.Image:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
+
+        try:
+            doc = Document(temp_file_path)
+            img = Image.new("RGB", (500, 500), color="white")
+            draw = ImageDraw.Draw(img)
+
+            y = 10
+            for paragraph in doc.paragraphs[:50]:  # Limit to first 50 paragraphs
+                if y > 480:  # Stop if we've reached the bottom of the image
+                    break
+
+                # Determine font based on paragraph style
+                if paragraph.style.name.startswith("Heading"):
+                    font = self.title_font
+                    fill_color = "navy"
+                else:
+                    font = self.body_font
+                    fill_color = "black"
+
+                # Wrap and draw text
+                wrapped_lines = self.wrap_text(paragraph.text, 480, font)
+                for line in wrapped_lines:
+                    draw.text((10, y), line, font=font, fill=fill_color)
+                    y += font.size + 2
+
+                y += 5  # Add some space between paragraphs
+
+            # Handle images
+            image_parts = [
+                rel for rel in doc.part.rels.values() if rel.reltype.endswith("/image")
+            ]
+            if image_parts:
+                # Get the first image
+                image_part = image_parts[0]
+                image_bytes = image_part.target_part.blob
+                with Image.open(io.BytesIO(image_bytes)) as doc_img:
+                    # Resize image to fit in the thumbnail
+                    doc_img.thumbnail((200, 200))
+                    # Paste the image in the bottom right corner
+                    img.paste(doc_img, (500 - doc_img.width, 500 - doc_img.height))
+
+            return img
+
+        except Exception as e:
+            print(f"Error processing Word document: {e}")
+            return self.text_to_image("Error: Unable to process Word document", "DOCX")
+        finally:
+            os.unlink(temp_file_path)
+
+    def wrap_text(
+        self, text: str, max_width: int, font: ImageFont.FreeTypeFont
+    ) -> List[str]:
+        words = text.split()
+        lines = []
+        current_line = []
+
+        for word in words:
+            test_line = " ".join(current_line + [word])
+            width = font.getlength(test_line)
+            if width <= max_width:
+                current_line.append(word)
+            else:
+                lines.append(" ".join(current_line))
+                current_line = [word]
+
+        if current_line:
+            lines.append(" ".join(current_line))
+
+        return lines
 
     def text_to_image(self, text: str, title: str = "") -> Image.Image:
         img = Image.new("RGB", (500, 500), color="white")
