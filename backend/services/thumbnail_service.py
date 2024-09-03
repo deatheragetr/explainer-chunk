@@ -22,7 +22,6 @@ from ebooklib import epub
 from openpyxl import load_workbook
 import csv
 import json
-import markdown
 from bs4 import BeautifulSoup
 from docx import Document
 from utils.file_type_normalizer import supported_file_types
@@ -40,10 +39,24 @@ class ThumbnailService:
         self.poppler_path = poppler_settings.poppler_path
         self.playwright = None
         self.browser = None
+
+        # Font initialization
         self.title_font = self.load_font(size=20)
         self.body_font = self.load_font(size=12)
+        self.code_font = self.load_monospace_font(size=10)
+        self.header_fonts = {
+            1: self.load_font(size=24, bold=True),
+            2: self.load_font(size=20, bold=True),
+            3: self.load_font(size=18, bold=True),
+            4: self.load_font(size=16, bold=True),
+            5: self.load_font(size=14, bold=True),
+            6: self.load_font(size=12, bold=True),
+        }
+        self.italic_font = self.load_font(size=12, italic=True)
 
-    def load_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    def load_font(
+        self, size: int, bold: bool = False, italic: bool = False
+    ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         # List of font files to try, in order of preference
         font_files = [
             "Arial.ttf",
@@ -55,11 +68,42 @@ class ThumbnailService:
 
         for font_file in font_files:
             try:
+                if bold and italic:
+                    font_file = font_file.replace(".ttf", "BoldItalic.ttf").replace(
+                        ".ttc", "BoldItalic.ttc"
+                    )
+                elif bold:
+                    font_file = font_file.replace(".ttf", "Bold.ttf").replace(
+                        ".ttc", "Bold.ttc"
+                    )
+                elif italic:
+                    font_file = font_file.replace(".ttf", "Italic.ttf").replace(
+                        ".ttc", "Italic.ttc"
+                    )
+
                 return ImageFont.truetype(font_file, size)
             except IOError:
                 continue
 
         # If all else fails, use the default font
+        return ImageFont.load_default()
+
+    def load_monospace_font(
+        self, size: int
+    ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        monospace_fonts = [
+            "CourierNew.ttf",
+            "DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        ]
+
+        for font_file in monospace_fonts:
+            try:
+                return ImageFont.truetype(font_file, size)
+            except IOError:
+                continue
+
+        # If no monospace font is found, fall back to the default font
         return ImageFont.load_default()
 
     async def initialize_playwright(self):
@@ -420,8 +464,8 @@ class ThumbnailService:
             except json.JSONDecodeError:
                 text_content = "Invalid JSON content"
         elif file_type == "markdown":
-            html = markdown.markdown(text_content)
-            text_content = BeautifulSoup(html, "html.parser").get_text()[:500]
+            return self.generate_markdown_thumbnail(text_content)
+
         elif file_type == "html":
             text_content = BeautifulSoup(text_content, "html.parser").get_text()[:500]
         elif file_type == "text":
@@ -429,72 +473,58 @@ class ThumbnailService:
 
         return self.text_to_image(text_content, file_type.upper())
 
-    async def generate_word_thumbnail(self, file_content: bytes) -> Image.Image:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
-            temp_file.write(file_content)
-            temp_file_path = temp_file.name
+    def generate_markdown_thumbnail(self, markdown_content: str) -> Image.Image:
+        img = Image.new("RGB", (500, 500), color="white")
+        draw = ImageDraw.Draw(img)
 
-        try:
-            doc = Document(temp_file_path)
-            img = Image.new("RGB", (500, 500), color="white")
-            draw = ImageDraw.Draw(img)
+        y = 10
+        lines = markdown_content.split("\n")
+        in_code_block = False
+        list_level = 0
 
-            y = 10
-            for paragraph in doc.paragraphs[:30]:  # Limit to first 30 paragraphs
-                if y > 480:  # Stop if we've reached the bottom of the image
-                    break
+        for line in lines:
+            if y > 480:  # Stop if we've reached the bottom of the image
+                break
 
-                # Determine font based on paragraph style
-                if paragraph.style.name.startswith("Heading"):
-                    font = self.title_font
-                    fill_color = "navy"
-                else:
-                    font = self.body_font
-                    fill_color = "black"
+            # Check for code blocks
+            if line.strip().startswith("```"):
+                in_code_block = not in_code_block
+                continue
 
-                # Wrap text to fit within image width
-                wrapped_text = self.wrap_text(paragraph.text, 490, font)
+            # Determine font and color based on Markdown elements
+            if in_code_block:
+                font = self.code_font
+                fill_color = "darkgreen"
+            elif line.startswith("#"):
+                level = min(len(line.split()[0]), 6)  # Header level, max 6
+                font = self.header_fonts[level]
+                fill_color = "navy"
+                line = line.lstrip("#").strip()  # Remove '#' symbols
+            elif line.strip().startswith(("- ", "* ", "+ ")):
+                font = self.body_font
+                fill_color = "black"
+                list_level = (len(line) - len(line.lstrip())) // 2
+                line = "  " * list_level + "• " + line.strip()[2:]
+            elif line.strip().startswith("> "):
+                font = self.italic_font
+                fill_color = "darkslategray"
+                line = line.strip()[2:]  # Remove '> '
+            else:
+                font = self.body_font
+                fill_color = "black"
+                list_level = 0
 
-                for line in wrapped_text:
-                    draw.text((10, y), line, font=font, fill=fill_color)
-                    y += font.size + 2
+            # Wrap and draw text
+            wrapped_lines = self.wrap_text(line, 480, font)
+            for wrapped_line in wrapped_lines:
+                draw.text(
+                    (10 + list_level * 10, y), wrapped_line, font=font, fill=fill_color
+                )
+                y += font.size + 2
 
-                y += 5  # Add some space between paragraphs
+            y += 5  # Add some space between paragraphs
 
-            # If there are images in the document, try to include a small version of the first image
-            for rel in doc.part.rels.values():
-                if "image" in rel.target_ref:
-                    image_path = os.path.join(
-                        os.path.dirname(temp_file_path), rel.target_ref
-                    )
-                    if os.path.exists(image_path):
-                        with Image.open(image_path) as doc_img:
-                            doc_img.thumbnail((150, 150))
-                            img.paste(doc_img, (340, 340))
-                        break  # Only include the first image
-
-            return img
-
-        except Exception as e:
-            print(f"Error processing Word document: {e}")
-            return self.text_to_image("Error: Unable to process Word document", "DOCX")
-        finally:
-            os.unlink(temp_file_path)
-
-    def wrap_text(
-        self, text: str, max_width: int, font: ImageFont.FreeTypeFont
-    ) -> List[str]:
-        lines = []
-        for paragraph in text.split("\n"):
-            line = []
-            for word in paragraph.split():
-                if font.getlength(" ".join(line + [word])) <= max_width:
-                    line.append(word)
-                else:
-                    lines.append(" ".join(line))
-                    line = [word]
-            lines.append(" ".join(line))
-        return line
+        return img
 
     async def generate_word_thumbnail(self, file_content: bytes) -> Image.Image:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
