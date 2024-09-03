@@ -179,7 +179,7 @@ class ThumbnailService:
             screenshot = await page.screenshot(full_page=False)
             await page.close()
 
-            # Process the screenshot to create a 200x200 thumbnail
+            # Process the screenshot to create a 500x500 thumbnail
             with Image.open(io.BytesIO(screenshot)) as img:
                 img = img.convert("RGB")
 
@@ -187,21 +187,21 @@ class ThumbnailService:
                 aspect_ratio = img.width / img.height
 
                 if aspect_ratio > 1:  # Width is greater than height
-                    new_width = int(200 * aspect_ratio)
-                    new_height = 200
+                    new_width = int(500 * aspect_ratio)
+                    new_height = 500
                 else:  # Height is greater than or equal to width
-                    new_width = 200
-                    new_height = int(200 / aspect_ratio)
+                    new_width = 500
+                    new_height = int(500 / aspect_ratio)
 
                 # Resize the image, maintaining aspect ratio
                 img = img.resize((new_width, new_height), Resampling.LANCZOS)
 
-                # Create a new 200x200 white image
-                thumbnail = Image.new("RGB", (200, 200), (255, 255, 255))
+                # Create a new 500x500 white image
+                thumbnail = Image.new("RGB", (500, 500), (255, 255, 255))
 
                 # Calculate position to paste resized image centered
-                paste_x = (200 - new_width) // 2
-                paste_y = (200 - new_height) // 2
+                paste_x = (500 - new_width) // 2
+                paste_y = (500 - new_height) // 2
 
                 # Paste the resized image onto the white background
                 thumbnail.paste(img, (paste_x, paste_y))
@@ -223,7 +223,7 @@ class ThumbnailService:
             pages = convert_from_bytes(
                 file_content, first_page=1, last_page=1, poppler_path=self.poppler_path
             )
-            thumbnail = pages[0].resize((200, 200), Resampling.LANCZOS)
+            thumbnail = pages[0].resize((500, 500), Resampling.LANCZOS)
             return thumbnail
         finally:
             os.unlink(temp_file_path)
@@ -238,7 +238,7 @@ class ThumbnailService:
             for item in book.get_items_of_type(ebooklib.ITEM_COVER):
                 if item.media_type.startswith("image/"):
                     cover = Image.open(io.BytesIO(item.content))
-                    return cover.resize((200, 200), Resampling.LANCZOS)
+                    return cover.resize((500, 500), Resampling.LANCZOS)
 
             # If no cover image found, generate a default thumbnail
             return await self.generate_default_thumbnail("epub")
@@ -337,8 +337,8 @@ class ThumbnailService:
                 x += cell_width + PADDING
             y += row_height + PADDING
 
-        # Resize to 200x200 while maintaining aspect ratio and padding with white
-        img = self.resize_and_pad(img, (200, 200))
+        # Resize to 500x500 while maintaining aspect ratio and padding with white
+        img = self.resize_and_pad(img, (500, 500))
 
         return img
 
@@ -415,8 +415,7 @@ class ThumbnailService:
                 parsed = json.loads(text_content)
                 # Pretty print JSON with indentation
                 text_content = json.dumps(parsed, indent=2)
-                # Limit to approximately 30 lines
-                lines = text_content.split("\n")[:30]
+                lines = text_content.split("\n")[:110]
                 text_content = "\n".join(lines)
             except json.JSONDecodeError:
                 text_content = "Invalid JSON content"
@@ -450,7 +449,7 @@ class ThumbnailService:
             os.unlink(temp_file_path)
 
     def text_to_image(self, text: str, title: str = "") -> Image.Image:
-        img = Image.new("RGB", (200, 200), color="white")
+        img = Image.new("RGB", (500, 500), color="white")
         d = ImageDraw.Draw(img)
         font = ImageFont.load_default()
 
@@ -462,7 +461,7 @@ class ThumbnailService:
             start_y = 10
 
         # Calculate maximum characters per line
-        max_width = 290
+        max_width = 500
         char_width = d.textbbox((0, 0), "A", font=font)[2]
         max_chars = max_width // char_width
 
@@ -480,13 +479,13 @@ class ThumbnailService:
             d.text((5, y), indent_space + line.lstrip(), fill="black", font=font)
             y += 12
 
-            if y > 195:  # Stop if we've reached the bottom of the image
+            if y > 455:  # Stop if we've reached the bottom of the image
                 break
 
         return img
 
     async def generate_default_thumbnail(self, file_type: str) -> Image.Image:
-        img = Image.new("RGB", (200, 200), color="lightgray")
+        img = Image.new("RGB", (500, 500), color="lightgray")
         d = ImageDraw.Draw(img)
         font = ImageFont.load_default()
         d.text((10, 10), f"{file_type.upper()} File", fill="black", font=font)
