@@ -110,7 +110,25 @@ export default defineComponent({
       fetchDocuments()
     }
 
-    const formatFileType = (fileType: string) => {
+    const formatFileType = (fileType: string): string => {
+      const fileTypeMap: { [key: string]: string } = {
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+        'application/pdf': 'PDF',
+        'text/plain': 'Text',
+        'text/markdown': 'Markdown',
+        'application/json': 'JSON',
+        'text/html': 'HTML',
+        'application/epub+zip': 'EPUB',
+        'text/csv': 'CSV'
+      }
+
+      // Check if we have a specific mapping for this file type
+      if (fileType in fileTypeMap) {
+        return fileTypeMap[fileType]
+      }
+
+      // If no specific mapping, fall back to the previous behavior
       return fileType.split('/').pop()?.toUpperCase() || fileType
     }
 
