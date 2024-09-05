@@ -37,7 +37,14 @@ class PopplerSettings(BaseSettings):
 
 class CryptoSettings(BaseSettings):
     secret_key: Annotated[str, "Encrpytion key for passwords, signatures"] = ""
-    algorithm: Annotated[str, "Algorithm for encryption (passwords)"] = ""
+    algorithm: Annotated[str, "Algorithm for encryption (passwords)"] = "HS256"
     access_token_expiration_minutes: Annotated[
         int, "Default TTL for JWT access token in minutes"
-    ] = 60
+    ] = 15
+    refresh_token_expiration_days: Annotated[
+        int, "Default TTL for JWT refresh token"
+    ] = 7
+
+
+class DataSettings(BaseSettings):
+    path_to_geoip_db: Annotated[str, "Path to the GeoLite MMDB of IP mappings"] = ""
