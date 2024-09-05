@@ -33,3 +33,11 @@ class PopplerSettings(BaseSettings):
         str,
         "The path to the poppler installation, used by pdf2image (convert_to_bytes)",
     ] = ""
+
+
+class CryptoSettings(BaseSettings):
+    secret_key: Annotated[str, "Encrpytion key for passwords, signatures"] = ""
+    algorithm: Annotated[str, "Algorithm for encryption (passwords)"] = ""
+    access_token_expiration_minutes: Annotated[
+        int, "Default TTL for JWT access token in minutes"
+    ] = 60

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 import os
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_limiter import FastAPILimiter
 from contextlib import asynccontextmanager
 import uvicorn
 from controllers import (
@@ -9,6 +10,7 @@ from controllers import (
     website_capture_controller,
     websocket_controller,
     ai_controller,
+    auth_controller,
 )
 from background.subscribers.redis_subscriber import RedisSubscriber
 from config.redis import redis_pool, RedisType
@@ -43,6 +45,7 @@ async def lifespan(app: FastAPI):
     redis_client: RedisType = await app.state.redis_pool.get_client()
     websocket_manager = get_websocket_manager()
     app.state.websocket_manager = websocket_manager
+    await FastAPILimiter.init(redis_client)
 
     await mongo_manager.connect()
     redis_subscriber = RedisSubscriber(redis_client, websocket_manager)
@@ -58,6 +61,7 @@ async def lifespan(app: FastAPI):
     await app.state.redis_pool.close()
     await app.state.websocket_manager.shutdown()
     await redis_subscriber.stop()
+    await FastAPILimiter.close()
 
     await mongo_manager.close()
     logger.info("Application shutdown complete")
@@ -74,11 +78,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(websocket_controller.router)
-app.include_router(website_capture_controller.router)
-app.include_router(upload_controller.router)
-app.include_router(document_upload_controller.router)
-app.include_router(ai_controller.router)
+app.include_router(auth_controller.router, prefix="/auth", tags=["authentication"])
+app.include_router(websocket_controller.router, tags=["websocket"])
+app.include_router(website_capture_controller.router, tags=["website_capture"])
+app.include_router(upload_controller.router, tags=["upload"])
+app.include_router(document_upload_controller.router, tags=["document_upload"])
+app.include_router(ai_controller.router, tags=["AI"])
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
