@@ -2,6 +2,10 @@ from pydantic_settings import BaseSettings
 from typing_extensions import Annotated
 
 
+class AppSettings(BaseSettings):
+    base_url: Annotated[str, "Base URL, e.g., explainerchonk.com"] = ""
+
+
 class S3Settings(BaseSettings):
     s3_access_key: Annotated[str, "S3 access key"] = ""
     s3_secret_key: Annotated[str, "S3 secret key"] = ""
@@ -48,3 +52,10 @@ class CryptoSettings(BaseSettings):
 
 class DataSettings(BaseSettings):
     path_to_geoip_db: Annotated[str, "Path to the GeoLite MMDB of IP mappings"] = ""
+
+
+class EmailSettings(BaseSettings):
+    postmark_api_key: Annotated[str, "Postmark API Key"] = ""
+    default_sender_email: Annotated[
+        str, "Default email sender, e.g., thomas@explainerchonk.com"
+    ] = ""

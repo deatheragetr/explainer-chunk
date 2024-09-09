@@ -9,7 +9,6 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
-    password: Optional[str] = None
 
 
 class PasswordChange(BaseModel):

@@ -26,6 +26,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = crypto_settings.access_token_expiration_minutes
 REFRESH_TOKEN_EXPIRATION_DAYS = crypto_settings.refresh_token_expiration_days
 data_settings = DataSettings()
 
+
 # GeoIP database
 geoip_reader = geoip2.database.Reader(data_settings.path_to_geoip_db)
 

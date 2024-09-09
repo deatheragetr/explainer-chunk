@@ -1,14 +1,15 @@
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 import datetime
 from fastapi.security import OAuth2PasswordBearer
 from fastapi_limiter.depends import RateLimiter
 from typing import List
-
 from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from db.models.user import MongoUser
 from config.redis import RedisType
+from config.environment import AppSettings
+from background.huey_jobs.post_user_registration_job import post_registration_job
 
 from api.utils.auth_helper import (
     get_password_hash,
@@ -25,16 +26,22 @@ from api.utils.auth_helper import (
     get_redis_client,
     verify_password,
 )
+from utils.email_utils import (
+    create_verification_token,
+    send_email_change_verification,
+)
 
 from api.requests.auth import UserCreate, UserUpdate, PasswordChange
 from api.responses.auth import UserResponse, TokenResponse, SessionResponse
 
 router = APIRouter()
+app_settings = AppSettings()
 
 
 @router.post("/register", response_model=UserResponse)
 async def register_user(
     user: UserCreate,
+    request: Request,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     _: str = Depends(RateLimiter(times=5, seconds=60)),
 ):
@@ -58,6 +65,8 @@ async def register_user(
 
     result = await db.users.insert_one(new_user)
     created_user = await db.users.find_one({"_id": result.inserted_id})
+
+    post_registration_job(user_id=result.inserted_id)
 
     return UserResponse(
         email=created_user["email"],
@@ -88,11 +97,11 @@ async def login_for_access_token(
     user_agent = request.headers.get("User-Agent", "Unknown")
     await add_user_session(user["email"], refresh_token, ip, user_agent, redis)
 
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -111,11 +120,11 @@ async def refresh_token(
     user_agent = request.headers.get("User-Agent", "Unknown")
     await add_user_session(current_user["email"], refresh_token, ip, user_agent, redis)
 
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+    )
 
 
 @router.post("/logout")
@@ -144,6 +153,8 @@ async def read_users_me(
 @router.put("/users/me", response_model=UserResponse)
 async def update_user_me(
     user_update: UserUpdate,
+    request: Request,
+    background_tasks: BackgroundTasks,
     current_user: MongoUser = Depends(get_current_user),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     _: str = Depends(RateLimiter(times=5, seconds=60)),
@@ -151,6 +162,25 @@ async def update_user_me(
     update_data = user_update.model_dump(exclude_unset=True)
     if "password" in update_data:
         update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+
+    if "email" in update_data and update_data["email"] != current_user["email"]:
+        # Check if the new email is already in use
+        existing_user = await db.users.find_one({"email": update_data["email"]})
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use",
+            )
+
+        # Set is_verified to False for the new email
+        update_data["is_verified"] = False
+
+        # Generate verification token and send email
+        verification_token = create_verification_token(update_data["email"])
+        verification_url = f"{request.base_url}verify-email?token={verification_token}"
+        background_tasks.add_task(
+            send_email_change_verification, update_data["email"], verification_url
+        )
 
     if update_data:
         update_data["updated_at"] = datetime.datetime.now(datetime.UTC)
