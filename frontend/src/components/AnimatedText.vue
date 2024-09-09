@@ -19,7 +19,7 @@ const displayedText = ref('')
 const currentWordIndex = ref(0)
 const isTyping = ref(true)
 
-let timeout: number | null = null
+let timeout: NodeJS.Timeout | null = null
 
 const typeText = () => {
   const currentWord = props.words[currentWordIndex.value]
