@@ -1,14 +1,24 @@
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    Request,
+    Response,
+    BackgroundTasks,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 import datetime
+from jose import jwt, JWTError
+
 from fastapi.security import OAuth2PasswordBearer
 from fastapi_limiter.depends import RateLimiter
 from typing import List
 from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from db.models.user import MongoUser
 from config.redis import RedisType
-from config.environment import AppSettings
+from config.environment import AppSettings, CryptoSettings
 from background.huey_jobs.post_user_registration_job import post_registration_job
 
 from api.utils.auth_helper import (
@@ -25,17 +35,19 @@ from api.utils.auth_helper import (
     blacklist_token,
     get_redis_client,
     verify_password,
+    REFRESH_TOKEN_EXPIRATION_DAYS,
 )
 from utils.email_utils import (
     create_verification_token,
     send_email_change_verification,
 )
 
-from api.requests.auth import UserCreate, UserUpdate, PasswordChange
+from api.requests.auth import UserCreate, UserUpdate, PasswordChange, VerifyEmailRequest
 from api.responses.auth import UserResponse, TokenResponse, SessionResponse
 
 router = APIRouter()
 app_settings = AppSettings()
+crypto_settings = CryptoSettings()
 
 
 @router.post("/register", response_model=UserResponse)
@@ -75,9 +87,44 @@ async def register_user(
     )
 
 
-@router.post("/token", response_model=TokenResponse)
+@router.post("/verify-email")
+async def verify_email(
+    request: VerifyEmailRequest, db: TypedAsyncIOMotorDatabase = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(
+            request.token, crypto_settings.secret_key, algorithms=["HS256"]
+        )
+        email = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=400, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user = await db.users.find_one({"email": email})
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user["is_verified"]:
+        return {"message": "Email already verified"}
+
+    await db.users.update_one(
+        {"email": email},
+        {
+            "$set": {
+                "is_verified": True,
+                "updated_at": datetime.datetime.now(datetime.UTC),
+            }
+        },
+    )
+
+    return {"message": "Email verified successfully"}
+
+
+@router.post("/login", response_model=TokenResponse)
 async def login_for_access_token(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     redis: RedisType = Depends(get_redis_client),
@@ -93,6 +140,16 @@ async def login_for_access_token(
     access_token = create_access_token(data={"sub": user["email"]})
     refresh_token = create_refresh_token(data={"sub": user["email"]})
 
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,  # Use only with HTTPS
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60,
+        path="/auth/refresh",  # Restrict to refresh endpoint
+    )
+
     ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "Unknown")
     await add_user_session(user["email"], refresh_token, ip, user_agent, redis)
@@ -101,20 +158,40 @@ async def login_for_access_token(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
+        user=UserResponse(
+            email=user["email"],
+            is_active=user["is_active"],
+            is_verified=user["is_verified"],
+        ),
     )
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     request: Request,
+    response: Response,
     current_user: MongoUser = Depends(get_current_user_refresh_token),
     redis: RedisType = Depends(get_redis_client),
-    token: str = Depends(OAuth2PasswordBearer(tokenUrl="token")),
 ):
-    await remove_user_session(current_user["email"], token, redis)
+    old_refresh_token = request.cookies.get("refresh_token")
+    if not old_refresh_token:
+        raise HTTPException(status_code=400, detail="Refresh token missing")
+
+    await remove_user_session(current_user["email"], old_refresh_token, redis)
 
     access_token = create_access_token(data={"sub": current_user["email"]})
     refresh_token = create_refresh_token(data={"sub": current_user["email"]})
+
+    # Set new refresh token in HttpOnly cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60,
+        path="/auth/refresh",
+    )
 
     ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "Unknown")
@@ -124,17 +201,24 @@ async def refresh_token(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
+        user=None,
     )
 
 
 @router.post("/logout")
 async def logout(
+    request: Request,
+    response: Response,
     current_user: MongoUser = Depends(get_current_user),
-    token: str = Depends(OAuth2PasswordBearer(tokenUrl="token")),
+    access_token: str = Depends(OAuth2PasswordBearer(tokenUrl="token")),
     redis: RedisType = Depends(get_redis_client),
 ):
-    await blacklist_token(token, redis)
-    await remove_user_session(current_user["email"], token, redis)
+    await blacklist_token(access_token, redis)
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        await remove_user_session(current_user["email"], refresh_token, redis)
+
+    response.delete_cookie(key="refresh_token", path="/auth/refresh")
     return {"message": "Successfully logged out"}
 
 

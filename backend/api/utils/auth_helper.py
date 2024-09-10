@@ -81,17 +81,51 @@ async def authenticate_user(
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    access_token: str = Depends(oauth2_scheme),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     redis: RedisType = Depends(get_redis_client),
 ) -> MongoUser:
+    """
+    Authenticate and retrieve the current user using an access token.
+
+    This function is used for regular API authentication using access tokens,
+    as opposed to 'get_current_user_refresh_token' which uses refresh tokens.
+    The key differences are:
+
+    1. Token source: This function uses the oauth2_scheme to extract the token
+       from the Authorization header, typically in the format "Bearer <token>".
+    2. Token type: It expects and validates an access token, which has a shorter
+       lifespan and is used for authenticating API requests.
+    3. Use case: This is used for most authenticated API endpoints to verify
+       the user's identity and permissions.
+
+    The oauth2_scheme is a FastAPI dependency that extracts the token from
+    the Authorization header. It returns a string containing the raw JWT token.
+
+    Args:
+        token (str): The access token extracted by oauth2_scheme.
+        db (TypedAsyncIOMotorDatabase): The database connection.
+        redis (RedisType): The Redis connection for token blacklist checking.
+
+    Returns:
+        MongoUser: The authenticated user's data.
+
+    Raises:
+        HTTPException: If the token is invalid, expired, or the user doesn't exist.
+    """
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            access_token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": True},
+        )
         email: str = payload.get("sub", "")
         if email is "":
             raise credentials_exception
@@ -100,7 +134,7 @@ async def get_current_user(
             raise credentials_exception
 
         # Check if token is blacklisted
-        is_blacklisted = await redis.sismember(f"blacklisted_tokens", token)
+        is_blacklisted = await redis.sismember(f"blacklisted_tokens", access_token)
         if is_blacklisted:
             raise credentials_exception
     except JWTError:
@@ -113,17 +147,51 @@ async def get_current_user(
 
 
 async def get_current_user_refresh_token(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     redis: RedisType = Depends(get_redis_client),
 ) -> MongoUser:
+    """
+    Authenticate and retrieve the current user using a refresh token.
+
+    This function is specifically designed for refresh token authentication,
+    as opposed to the regular 'get_current_user' function which uses access tokens.
+    It's used in the token refresh process to issue new access tokens without
+    requiring the user to re-enter their credentials.
+
+    The function performs the following steps:
+    1. Retrieves the refresh token from the request's cookies.
+    2. Decodes and validates the refresh token.
+    3. Checks if the refresh token is still valid in Redis.
+    4. Retrieves and returns the user associated with the token.
+
+    Args:
+        request (Request): The FastAPI request object.
+        db (TypedAsyncIOMotorDatabase): The database dependency.
+        redis (RedisType): The Redis client dependency.
+
+    Returns:
+        MongoUser: The authenticated user.
+
+    Raises:
+        HTTPException: If the refresh token is invalid, expired, or the user doesn't exist.
+    """
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise credentials_exception
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            refresh_token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": True},
+        )
         email: str = payload.get("sub", "")
         if email is "":
             raise credentials_exception
@@ -132,7 +200,7 @@ async def get_current_user_refresh_token(
             raise credentials_exception
 
         # Check if refresh token is valid
-        is_valid = await redis.sismember(f"user_refresh_tokens:{email}", token)
+        is_valid = await redis.sismember(f"user_refresh_tokens:{email}", refresh_token)
         if not is_valid:
             raise credentials_exception
     except JWTError:
@@ -171,6 +239,32 @@ def get_geolocation(ip: str) -> Dict[str, Any]:
 async def add_user_session(
     email: str, refresh_token: str, ip: str, user_agent: str, redis: RedisType
 ) -> None:
+    """
+    Add a new user session and refresh token to Redis.
+
+    This function creates a new session for a user and stores it in Redis. It also adds
+    the refresh token to a separate set in Redis.
+
+    User sessions and refresh tokens are related but serve different purposes:
+    - User sessions: Contain detailed information about each active session, including
+      IP, user agent, geolocation, and creation time. They allow for tracking and
+      managing individual login instances.
+    - User refresh tokens: A set of valid refresh tokens for the user. This allows for
+      quick validation of refresh tokens without needing to check the full session data.
+
+    Both user sessions and refresh tokens are set to expire after REFRESH_TOKEN_EXPIRATION_DAYS.
+    This automatic expiration helps in maintaining clean data and enforcing token lifetimes.
+
+    Args:
+        email (str): The user's email address.
+        refresh_token (str): The refresh token for the session.
+        ip (str): The IP address of the client.
+        user_agent (str): The user agent string of the client.
+        redis (RedisType): The Redis client instance.
+
+    Returns:
+        None
+    """
     session_id = str(uuid.uuid4())
     geolocation = get_geolocation(ip)
     session_data = {
@@ -204,10 +298,10 @@ async def remove_user_session(email: str, refresh_token: str, redis: RedisType) 
     await redis.srem(f"user_refresh_tokens:{email}", refresh_token)
 
 
-async def blacklist_token(token: str, redis: RedisType) -> None:
-    await redis.sadd("blacklisted_tokens", token)
+async def blacklist_token(access_token: str, redis: RedisType) -> None:
+    await redis.sadd("blacklisted_tokens", access_token)
     # Set expiration for blacklisted token
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
     exp = payload.get("exp")
     if exp:
         ttl = max(exp - int(datetime.datetime.now(datetime.UTC).timestamp()), 0)

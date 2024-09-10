@@ -44,7 +44,7 @@ class CryptoSettings(BaseSettings):
     algorithm: Annotated[str, "Algorithm for encryption (passwords)"] = "HS256"
     access_token_expiration_minutes: Annotated[
         int, "Default TTL for JWT access token in minutes"
-    ] = 15
+    ] = 10
     refresh_token_expiration_days: Annotated[
         int, "Default TTL for JWT refresh token"
     ] = 7
