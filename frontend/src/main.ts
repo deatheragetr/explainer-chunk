@@ -5,6 +5,7 @@ import { createPinia } from 'pinia'
 
 import App from './App.vue'
 import router from './router'
+import store from './store/auth'
 import './index.css' // This file will include Tailwind
 import 'pdfjs-dist/web/pdf_viewer.css'
 import Toast from 'vue-toastification'
@@ -14,6 +15,7 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+app.use(store)
 app.use(Toast)
 
 app.mount('#app')

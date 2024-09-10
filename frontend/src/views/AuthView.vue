@@ -213,11 +213,11 @@ import { ref, computed } from 'vue'
 import { useVuelidate } from '@vuelidate/core'
 import { required, email as emailValidator, minLength, sameAs } from '@vuelidate/validators'
 import axios from 'axios'
-import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import AnimatedText from '@/components/AnimatedText.vue'
+import { useAuth } from '@/composables/useAuth'
+import api from '@/api/axios'
 
-const router = useRouter()
 const toast = useToast()
 
 const isLogin = ref(true)
@@ -226,6 +226,7 @@ const password = ref('')
 const confirmPassword = ref('')
 const showVerificationMessage = ref(false)
 const redirectCountdown = ref(5)
+const { login } = useAuth()
 
 const rules = computed(() => ({
   email: { required, emailValidator },
@@ -250,7 +251,7 @@ const handleSubmit = async () => {
 
   try {
     if (isLogin.value) {
-      await login()
+      await handleLogin()
     } else {
       await register()
     }
@@ -263,36 +264,18 @@ const handleSubmit = async () => {
   }
 }
 
-const login = async () => {
-  const response = await axios.post(
-    'http://localhost:8000/auth/token',
-    {
-      username: email.value,
-      password: password.value
-    },
-    {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    }
-  )
-  // Handle successful login (e.g., store token, redirect)
-  console.log('Login successful:', response.data)
-  toast.success('Successfully logged in!')
-  router.push('/')
+const handleLogin = async () => {
+  // If login successful, user will be redirected by the useAuth composable
+  await login(email.value, password.value)
 }
 
 const register = async () => {
-  const response = await axios.post('http://localhost:8000/auth/register', {
+  const response = await api.post('/auth/register', {
     email: email.value,
     password: password.value
   })
   console.log('Registration successful:', response.data)
 
-  // Automatically log in after successful registration
-  // await login()
-
-  // Show verification message
   showVerificationMessage.value = true
 
   const countdownInterval = setInterval(() => {
@@ -300,7 +283,7 @@ const register = async () => {
     if (redirectCountdown.value <= 0) {
       clearInterval(countdownInterval)
       showVerificationMessage.value = false
-      login() // Attempt to log in after registration
+      handleLogin() // Attempt to log in after registration
     }
   }, 1000)
 }
