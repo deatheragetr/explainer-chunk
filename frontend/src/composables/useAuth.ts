@@ -29,6 +29,7 @@ export function useAuth() {
     }
   }
 
+  // DELETE?
   const checkAuth = async (): Promise<void> => {
     if (!isAuthenticated.value && store.state.accessToken) {
       try {
