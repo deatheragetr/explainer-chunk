@@ -156,7 +156,6 @@ async def login_for_access_token(
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="bearer",
         user=UserResponse(
             email=user["email"],
@@ -199,9 +198,12 @@ async def refresh_token(
 
     return TokenResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="bearer",
-        user=None,
+        user=UserResponse(
+            email=current_user["email"],
+            is_active=current_user["is_active"],
+            is_verified=current_user["is_verified"],
+        ),
     )
 
 
@@ -318,7 +320,6 @@ async def change_password(
 
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
         "token_type": "bearer",
     }
 
