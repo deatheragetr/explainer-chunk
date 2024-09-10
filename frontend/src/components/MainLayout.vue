@@ -7,8 +7,8 @@
       @mouseup="handleTextSelection"
     >
       <div class="p-6">
-        <h2 class="text-3xl font-extrabold mb-6 text-indigo-800 tracking-tight">Document Viewer</h2>
-        <DocumentUploadModal @document-loaded="handleDocumentLoaded" />
+        <!-- <h2 class="text-3xl font-extrabold mb-6 text-indigo-800 tracking-tight">Document Viewer</h2>
+        <DocumentUploadModal @document-loaded="handleDocumentLoaded" /> -->
         <div class="mt-6">
           <component
             :is="currentViewer"

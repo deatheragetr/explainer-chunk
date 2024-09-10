@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-7xl mx-auto">
-      <h1 class="text-4xl font-extrabold text-center text-indigo-800 mb-12">Your Documents</h1>
+      <h1 class="text-4xl font-extrabold text-center text-indigo-800 mb-12">Your Texts</h1>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <div v-for="doc in documents" :key="doc.id" class="group">
