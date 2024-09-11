@@ -16,7 +16,9 @@ postmark_client = PostmarkClient(server_token=email_settings.postmark_api_key)
 def create_verification_token(email: str) -> str:
     expiration = datetime.now(dt.UTC) + timedelta(days=7)
     payload = {"sub": email, "exp": expiration}
-    return jwt.encode(payload, crypto_settings.secret_key, algorithm="HS256")
+    return jwt.encode(
+        payload, crypto_settings.secret_key, algorithm=crypto_settings.algorithm
+    )
 
 
 async def send_verification_email(email: EmailStr, verification_url: str):

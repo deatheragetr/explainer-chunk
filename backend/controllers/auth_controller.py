@@ -93,7 +93,9 @@ async def verify_email(
 ):
     try:
         payload = jwt.decode(
-            request.token, crypto_settings.secret_key, algorithms=["HS256"]
+            request.token,
+            crypto_settings.secret_key,
+            algorithms=[crypto_settings.algorithm],
         )
         email = payload.get("sub")
         if email is None:
@@ -284,6 +286,7 @@ async def update_user_me(
 async def change_password(
     password_change: PasswordChange,
     request: Request,
+    response: Response,
     current_user: MongoUser = Depends(get_current_user),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     redis: RedisType = Depends(get_redis_client),
@@ -318,6 +321,17 @@ async def change_password(
     user_agent = request.headers.get("User-Agent", "Unknown")
     await add_user_session(current_user["email"], refresh_token, ip, user_agent, redis)
 
+    # Set new refresh token in HttpOnly cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60,
+        path="/auth/refresh",
+    )
+
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
@@ -343,6 +357,7 @@ async def logout_all_sessions(
     current_user: MongoUser = Depends(get_current_user),
     redis: RedisType = Depends(get_redis_client),
 ):
+    # TODO: Blacklist access tokens?  Probably not easily possible.
     await redis.delete(f"user_refresh_tokens:{current_user['email']}")
     await redis.delete(f"user_sessions:{current_user['email']}")
     return {"message": "Successfully logged out from all sessions"}

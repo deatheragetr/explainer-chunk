@@ -23,9 +23,35 @@ export function useAuth() {
   const logout = async (): Promise<void> => {
     try {
       await store.dispatch('logout')
-      router.push('/login')
+      router.push('/auth')
     } catch (error) {
       console.error('Logout failed', error)
+      throw error
+    }
+  }
+
+  const logoutAll = async (): Promise<void> => {
+    try {
+      await store.dispatch('logoutAll')
+      router.push('/auth')
+    } catch (error) {
+      console.error('Logout all failed', error)
+      throw error
+    }
+  }
+
+  const changePassword = async ({
+    current_password,
+    new_password
+  }: {
+    current_password: string
+    new_password: string
+  }): Promise<void> => {
+    try {
+      await store.dispatch('changePassword', { current_password, new_password })
+    } catch (error) {
+      console.error('Change password failed', error)
+      throw error
     }
   }
 
@@ -45,6 +71,8 @@ export function useAuth() {
     isAuthenticated,
     login,
     logout,
+    logoutAll,
+    changePassword,
     checkAuth
   }
 }

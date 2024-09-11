@@ -53,7 +53,7 @@
           class="bg-white shadow-sm rounded-xl p-8 transition-all duration-300 hover:shadow-md"
         >
           <h2 class="text-2xl font-extralight text-gray-700 mb-6">Password</h2>
-          <form @submit.prevent="changePassword" class="space-y-6">
+          <form @submit.prevent="handleChangePassword" class="space-y-6">
             <div>
               <label for="current-password" class="block text-sm text-gray-500 mb-1"
                 >Current Password</label
@@ -181,13 +181,15 @@
 
                 <form @submit.prevent="updateEmail" class="mt-4">
                   <div>
-                    <label for="new-email" class="block text-sm text-gray-500">New Email</label>
+                    <label for="new-email" class="block text-sm text-gray-500 mb-1"
+                      >New Email</label
+                    >
                     <input
                       id="new-email"
                       v-model="newEmail"
                       type="email"
                       required
-                      class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors duration-300"
+                      class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm shadow-sm placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors duration-300"
                     />
                   </div>
                   <div class="mt-4">
@@ -215,7 +217,7 @@ import { useAuth } from '@/composables/useAuth'
 import api from '@/api/axios'
 import Alert from '@/components/ui/Alert.vue'
 
-const { user, logout } = useAuth()
+const { user, logout, logoutAll, changePassword } = useAuth()
 const sessions = ref([])
 const showUpdateEmailModal = ref(false)
 const newEmail = ref('')
@@ -262,14 +264,14 @@ async function updateEmail() {
   }
 }
 
-async function changePassword() {
+async function handleChangePassword() {
+  error.value = ''
   if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
     error.value = "Passwords don't match"
     return
   }
-
   try {
-    await api.post('/auth/change-password', {
+    await changePassword({
       current_password: passwordForm.value.currentPassword,
       new_password: passwordForm.value.newPassword
     })
@@ -282,9 +284,7 @@ async function changePassword() {
 
 async function logoutCurrentSession() {
   try {
-    await api.post('/auth/logout')
-    logout()
-    // Redirect to login page
+    await logout()
   } catch (err) {
     error.value = 'Error logging out current session'
   }
@@ -292,8 +292,7 @@ async function logoutCurrentSession() {
 
 async function logoutAllSessions() {
   try {
-    await api.post('/auth/logout-all')
-    logout()
+    await logoutAll()
     // Redirect to login page
   } catch (err) {
     error.value = 'Error logging out all sessions'

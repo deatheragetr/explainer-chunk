@@ -1,7 +1,9 @@
 import { createStore, type Commit } from 'vuex'
 import axios, { type AxiosInstance } from 'axios'
+import api from '@/api/axios'
 
-const api: AxiosInstance = axios.create({
+// Plain API to avoid infinite access token refresh loops
+const plainApi: AxiosInstance = axios.create({
   baseURL: 'http://localhost:8000',
   withCredentials: true
 })
@@ -77,18 +79,38 @@ export default createStore<AuthState>({
       await api.post('/auth/logout', {}, { withCredentials: true })
       commit('clearUserData')
     },
+    async logoutAll({ commit }: { commit: Commit }) {
+      await api.post('/auth/logout-all', {}, { withCredentials: true })
+      commit('clearUserData')
+    },
     async refreshToken({ commit }: { commit: Commit }): Promise<string> {
       try {
-        const response = await api.post<{ user: User; access_token: string }>(
+        // Critical:  Must use "plainAPI", not the imported api with refresh interceptors, which can cause an infinite loop
+        const response = await plainApi.post<{ user: User; access_token: string }>(
           '/auth/refresh',
           {},
           { withCredentials: true }
         )
+        commit('setUser', response.data.user)
+        commit('setAccessToken', response.data.access_token)
+        commit('setIsLoggedIn', true)
         return response.data.access_token
       } catch (error) {
         commit('clearUserData')
         throw error
       }
+    },
+    async changePassword(
+      { commit }: { commit: Commit },
+      { current_password, new_password }: { current_password: string; new_password: string }
+    ): Promise<void> {
+      const response = await api.post('/auth/change-password', {
+        current_password,
+        new_password
+      })
+      commit('setUser', response.data.user)
+      commit('setAccessToken', response.data.access_token)
+      commit('setIsLoggedIn', true)
     },
     async checkAuth({ commit, dispatch }: { commit: Commit; dispatch: any }) {
       const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true'
