@@ -318,10 +318,15 @@ async def change_password(
     user_agent = request.headers.get("User-Agent", "Unknown")
     await add_user_session(current_user["email"], refresh_token, ip, user_agent, redis)
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-    }
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse(
+            email=current_user["email"],
+            is_active=current_user["is_active"],
+            is_verified=current_user["is_verified"],
+        ),
+    )
 
 
 @router.get("/sessions", response_model=List[SessionResponse])
