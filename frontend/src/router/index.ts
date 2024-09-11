@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import MainLayout from '@/components/MainLayout.vue'
 import AuthView from '../views/AuthView.vue'
 import EmailVerificationView from '@/views/EmailVerificationView.vue'
+import UserSettingsView from '@/views/UserSettingsView.vue'
 import store from '@/store/auth'
 
 const routes: Array<RouteRecordRaw> = [
@@ -28,6 +29,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { requiresAuth: true },
     component: MainLayout,
     props: (route) => ({ documentId: route.params.documentId })
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: UserSettingsView,
+    meta: { requiresAuth: true }
   },
   {
     path: '/about',

@@ -1,5 +1,10 @@
 import { createStore, type Commit } from 'vuex'
-import api from '@/api/axios'
+import axios, { type AxiosInstance } from 'axios'
+
+const api: AxiosInstance = axios.create({
+  baseURL: 'http://localhost:8000',
+  withCredentials: true
+})
 
 export interface User {
   id: string
@@ -79,10 +84,6 @@ export default createStore<AuthState>({
           {},
           { withCredentials: true }
         )
-        console.log('\n\nRefreshing token complete')
-        commit('setAccessToken', response.data.access_token)
-        commit('setUser', response.data.user)
-        commit('setIsLoggedIn', true)
         return response.data.access_token
       } catch (error) {
         commit('clearUserData')
