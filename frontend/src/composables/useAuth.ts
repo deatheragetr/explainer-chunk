@@ -55,6 +55,15 @@ export function useAuth() {
     }
   }
 
+  const updateEmail = async ({ newEmail }: { newEmail: string }): Promise<void> => {
+    try {
+      await store.dispatch('updateEmail', { newEmail })
+    } catch (error) {
+      console.error('Update email failed', error)
+      throw error
+    }
+  }
+
   // DELETE?
   const checkAuth = async (): Promise<void> => {
     if (!isAuthenticated.value && store.state.accessToken) {
@@ -73,6 +82,7 @@ export function useAuth() {
     logout,
     logoutAll,
     changePassword,
+    updateEmail,
     checkAuth
   }
 }

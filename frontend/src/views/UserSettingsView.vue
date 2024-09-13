@@ -20,7 +20,7 @@
           <div class="flex items-center justify-between">
             <div>
               <p class="text-sm text-gray-500">Email</p>
-              <p class="mt-1 text-sm text-gray-900">{{ user.email }}</p>
+              <p class="mt-1 text-sm text-gray-900">{{ user?.email }}</p>
             </div>
             <button
               @click="showUpdateEmailModal = true"
@@ -33,13 +33,13 @@
             <span
               :class="[
                 'px-3 py-1 text-xs font-medium rounded-full',
-                user.is_verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                user?.is_verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
               ]"
             >
-              {{ user.is_verified ? 'Verified' : 'Not Verified' }}
+              {{ user?.is_verified ? 'Verified' : 'Not Verified' }}
             </span>
             <button
-              v-if="!user.is_verified"
+              v-if="!user?.is_verified"
               @click="resendVerificationEmail"
               class="ml-2 text-sm text-indigo-600 hover:text-indigo-800 transition-colors duration-300"
             >
@@ -179,7 +179,7 @@
                   </p>
                 </div>
 
-                <form @submit.prevent="updateEmail" class="mt-4">
+                <form @submit.prevent="handleUpdateEmail" class="mt-4">
                   <div>
                     <label for="new-email" class="block text-sm text-gray-500 mb-1"
                       >New Email</label
@@ -217,7 +217,7 @@ import { useAuth } from '@/composables/useAuth'
 import api from '@/api/axios'
 import Alert from '@/components/ui/Alert.vue'
 
-const { user, logout, logoutAll, changePassword } = useAuth()
+const { user, logout, logoutAll, changePassword, updateEmail } = useAuth()
 const sessions = ref([])
 const showUpdateEmailModal = ref(false)
 const newEmail = ref('')
@@ -253,10 +253,9 @@ async function fetchSessions() {
   }
 }
 
-async function updateEmail() {
+async function handleUpdateEmail() {
   try {
-    const response = await api.put('/auth/users/me', { email: newEmail.value })
-    user.value = response.data
+    await updateEmail({ newEmail: newEmail.value })
     showUpdateEmailModal.value = false
     success.value = 'Email updated successfully'
   } catch (err) {
@@ -299,9 +298,18 @@ async function logoutAllSessions() {
   }
 }
 
-function resendVerificationEmail() {
+async function resendVerificationEmail() {
   // Implement this function to resend verification email
   // You'll need to add an endpoint for this on your backend
+  if (user?.is_verified) {
+    error.value = 'User already verified'
+  }
+  try {
+    await api.post('/auth/verification-email', {})
+    success.value = 'Resent verification email!'
+  } catch (err) {
+    error.value = 'Error resending verification email'
+  }
 }
 
 function formatDate(dateString: string) {

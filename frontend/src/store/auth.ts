@@ -11,6 +11,7 @@ const plainApi: AxiosInstance = axios.create({
 export interface User {
   id: string
   email: string
+  is_verified: string
   // Add other user properties as needed
 }
 
@@ -108,6 +109,15 @@ export default createStore<AuthState>({
         current_password,
         new_password
       })
+      commit('setUser', response.data.user)
+      commit('setAccessToken', response.data.access_token)
+      commit('setIsLoggedIn', true)
+    },
+    async updateEmail(
+      { commit }: { commit: Commit },
+      { newEmail }: { newEmail: string }
+    ): Promise<void> {
+      const response = await api.put('/auth/users/me/email', { email: newEmail })
       commit('setUser', response.data.user)
       commit('setAccessToken', response.data.access_token)
       commit('setIsLoggedIn', true)
