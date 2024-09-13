@@ -3,7 +3,12 @@ from typing_extensions import Annotated
 
 
 class AppSettings(BaseSettings):
-    base_url: Annotated[str, "Base URL, e.g., explainerchonk.com"] = ""
+    api_base_url: Annotated[
+        str, "Base API URL, e.g., https://api.explainerchonk.com"
+    ] = ""
+    app_base_url: Annotated[
+        str, "Base UI URL, e.g., https://app.explainerchonk.com"
+    ] = ""
 
 
 class S3Settings(BaseSettings):

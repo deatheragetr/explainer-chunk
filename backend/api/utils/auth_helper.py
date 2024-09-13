@@ -71,12 +71,12 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
 
 async def authenticate_user(
     email: EmailStr, password: str, db: TypedAsyncIOMotorDatabase
-) -> Union[MongoUser, bool]:
+) -> Union[MongoUser, None]:
     user: Optional[MongoUser] = await get_user(email, db)
     if not user:
-        return False
+        return None
     if not verify_password(password, user["hashed_password"]):
-        return False
+        return None
     return user
 
 

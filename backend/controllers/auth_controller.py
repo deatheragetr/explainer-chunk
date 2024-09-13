@@ -9,6 +9,8 @@ from fastapi import (
     BackgroundTasks,
 )
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import JSONResponse
+
 import datetime
 from jose import jwt, JWTError
 
@@ -42,7 +44,12 @@ from utils.email_utils import (
     send_email_change_verification,
 )
 
-from api.requests.auth import UserCreate, UserUpdate, PasswordChange, VerifyEmailRequest
+from api.requests.auth import (
+    UserCreate,
+    EmailUpdate,
+    PasswordChange,
+    VerifyEmailRequest,
+)
 from api.responses.auth import UserResponse, TokenResponse, SessionResponse
 
 router = APIRouter()
@@ -77,6 +84,13 @@ async def register_user(
 
     result = await db.users.insert_one(new_user)
     created_user = await db.users.find_one({"_id": result.inserted_id})
+
+    # Super unlikely race condition.  Here primarily to satisfy type checker
+    if created_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="The requested user no longer exists. The operation cannot be completed.",
+        )
 
     post_registration_job(user_id=result.inserted_id)
 
@@ -238,47 +252,114 @@ async def read_users_me(
     )
 
 
-@router.put("/users/me", response_model=UserResponse)
+@router.put("/users/me/email", response_model=TokenResponse)
 async def update_user_me(
-    user_update: UserUpdate,
+    email_update: EmailUpdate,
     request: Request,
+    response: Response,
     background_tasks: BackgroundTasks,
     current_user: MongoUser = Depends(get_current_user),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    redis: RedisType = Depends(get_redis_client),
     _: str = Depends(RateLimiter(times=5, seconds=60)),
 ):
-    update_data = user_update.model_dump(exclude_unset=True)
-    if "password" in update_data:
-        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+    update_data = email_update.model_dump(exclude_unset=True)
 
-    if "email" in update_data and update_data["email"] != current_user["email"]:
-        # Check if the new email is already in use
-        existing_user = await db.users.find_one({"email": update_data["email"]})
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already in use",
-            )
+    # Guard
+    if update_data["email"] == current_user["email"]:
+        raise HTTPException(status_code=400, detail="Email already set")
 
-        # Set is_verified to False for the new email
-        update_data["is_verified"] = False
-
-        # Generate verification token and send email
-        verification_token = create_verification_token(update_data["email"])
-        verification_url = f"{request.base_url}verify-email?token={verification_token}"
-        background_tasks.add_task(
-            send_email_change_verification, update_data["email"], verification_url
+    # Check if the new email is already in use
+    existing_user = await db.users.find_one({"email": update_data["email"]})
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already in use",
         )
 
-    if update_data:
-        update_data["updated_at"] = datetime.datetime.now(datetime.UTC)
-        await db.users.update_one({"_id": current_user["_id"]}, {"$set": update_data})
+    # Set is_verified to False for the new email
+    update_data["is_verified"] = False
+
+    # Generate verification token and send email
+    verification_token = create_verification_token(update_data["email"])
+    verification_url = (
+        f"{app_settings.app_base_url}/verify-email?token={verification_token}"
+    )
+    background_tasks.add_task(
+        send_email_change_verification, update_data["email"], verification_url
+    )
+    # Invalidate all existing refresh tokens for old email
+    # Remove all sessions for old email
+    await redis.delete(f"user_refresh_tokens:{current_user['email']}")
+    await redis.delete(f"user_sessions:{current_user['email']}")
+
+    # Create new tokens for new email address
+    access_token = create_access_token(data={"sub": update_data["email"]})
+    refresh_token = create_refresh_token(data={"sub": update_data["email"]})
+
+    # Add new session
+    ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    await add_user_session(update_data["email"], refresh_token, ip, user_agent, redis)
+
+    # Set new refresh token in HttpOnly cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60,
+        path="/auth/refresh",
+    )
+
+    update_data["updated_at"] = datetime.datetime.now(datetime.UTC)
+    await db.users.update_one({"_id": current_user["_id"]}, {"$set": update_data})
 
     updated_user = await db.users.find_one({"_id": current_user["_id"]})
-    return UserResponse(
-        email=updated_user["email"],
-        is_active=updated_user["is_active"],
-        is_verified=updated_user["is_verified"],
+    # Mostly to keep the type checker happy.  This would be an extraoridinary race condition to encounter.
+    if updated_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="The requested user no longer exists. The operation cannot be completed.",
+        )
+
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse(
+            email=updated_user["email"],
+            is_active=updated_user["is_active"],
+            is_verified=updated_user["is_verified"],
+        ),
+    )
+
+
+# Resend Email Verification
+@router.post("/verification-email")
+async def resend_verification_email(
+    background_tasks: BackgroundTasks,
+    current_user: MongoUser = Depends(get_current_user),
+    _: str = Depends(RateLimiter(times=3, seconds=60)),
+):
+
+    if current_user["is_verified"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already verified",
+        )
+
+    verification_token = create_verification_token(current_user["email"])
+    verification_url = (
+        f"{app_settings.app_base_url}/verify-email?token={verification_token}"
+    )
+    background_tasks.add_task(
+        send_email_change_verification, current_user["email"], verification_url
+    )
+
+    return JSONResponse(
+        content={"message": "Verification email sent"},
+        status_code=status.HTTP_202_ACCEPTED,
     )
 
 

@@ -25,7 +25,7 @@ class RegistrationService:
                     return
 
                 verification_token = create_verification_token(user["email"])
-                verification_url = f"{self.app_settings.base_url}/verify-email?token={verification_token}"
+                verification_url = f"{self.app_settings.app_base_url}/verify-email?token={verification_token}"
 
                 self.logger.info(f"Sending verification email to user: {user_id}")
                 await send_verification_email(user["email"], verification_url)
