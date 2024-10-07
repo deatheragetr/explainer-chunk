@@ -4,7 +4,7 @@
       @click="openModal"
       class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-lg font-bold text-lg transition duration-300 ease-in-out transform hover:from-purple-700 hover:to-indigo-700 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 shadow-lg"
     >
-      Add Website or Document
+      Upload or Import Text
     </button>
 
     <TransitionRoot appear :show="isOpen" as="template">

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, Body, Depends
+import traceback
+from fastapi import APIRouter, HTTPException, Body, Depends, Query
+from typing import Optional, List, Any, Union
 from bson import ObjectId
 from db.models.document_uploads import (
     MongoDocumentUpload,
@@ -6,12 +8,17 @@ from db.models.document_uploads import (
     generate_s3_url,
     AllowedS3Buckets,
     SourceType,
+    ThumbnailDetails,
+    MongoFileDetails,
 )
 from api.requests.document_upload import DocumentUploadRequest
 from api.responses.document_upload import (
     DocumentUploadResponse,
     DocumentRetrieveResponse,
     DocumentUploadImportExternalResponse,
+    PaginatedDocumentUploadsResponse,
+    ThumbnailInfo,
+    DocumentRetrieveResponseForPage,
 )
 from api.utils.s3_utils import verify_s3_object
 from typing import Annotated
@@ -20,8 +27,11 @@ from config.mongo import get_db, TypedAsyncIOMotorDatabase
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pymongo.results import InsertOneResult
 from pymongo.errors import DuplicateKeyError
-from config.s3 import s3_client
+from config.s3 import s3_client, S3Client
+from config.logger import get_logger
 from background.huey_jobs.process_document_job import process_document
+
+logger = get_logger()
 
 s3_settings = S3Settings()
 router = APIRouter()
@@ -76,6 +86,8 @@ async def upload_document(
             extracted_text=reqBody.extracted_text,
             extracted_metadata=reqBody.extracted_metadata,
             openai_assistants=[],
+            chats=[],
+            thumbnail=None,
         )
 
         # Kick of background job to process document
@@ -127,14 +139,9 @@ async def get_document(
                 presigned_url = document["file_details"]["s3_url"]
             else:
                 # Generate pre-signed URL
-                presigned_url = s3_client.generate_presigned_url(
-                    "get_object",
-                    Params={
-                        "Bucket": document["file_details"]["s3_bucket"],
-                        "Key": document["file_details"]["file_key"],
-                    },
-                    ExpiresIn=3600,
-                )  # URL expires in 1 hour
+                presigned_url = generate_presigned_url(
+                    document["file_details"], s3_client
+                )
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error generating pre-signed URL: {str(e)}"
@@ -151,3 +158,84 @@ async def get_document(
         raise HTTPException(status_code=400, detail="Invalid document ID")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/document-uploads", response_model=PaginatedDocumentUploadsResponse)
+async def get_document_uploads(
+    before: Optional[str] = Query(None, description="Cursor for pagination"),
+    limit: int = Query(10, ge=1, le=100, description="Number of documents to return"),
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
+    try:
+        collection = db.document_uploads
+        query = {}
+        if before:
+            query["_id"] = {"$lt": ObjectId(before)}
+
+        cursor = (
+            collection.find(
+                query,
+                {"_id": 1, "file_details": 1, "thumbnail": 1, "extracted_metadata": 1},
+            )
+            .sort("_id", -1)
+            .limit(limit + 1)
+        )  # Fetch one extra to determine if there are more results
+
+        documents: List[Any] = await cursor.to_list(length=limit + 1)  # type: ignore
+
+        next_cursor = None
+        if len(documents) > limit:
+            next_cursor = str(documents[-1]["_id"])
+            documents = documents[:limit]
+
+        response_documents: List[DocumentRetrieveResponseForPage] = []
+        for doc in documents:
+            presigned_url = generate_presigned_url(doc.get("thumbnail", {}), s3_client)
+            response_doc = DocumentRetrieveResponseForPage(
+                id=str(doc["_id"]),
+                file_name=doc["file_details"]["file_name"],
+                file_type=doc["file_details"]["file_type"],
+                url_friendly_file_name=doc["file_details"]["url_friendly_file_name"],
+                thumbnail=ThumbnailInfo(presigned_url=presigned_url),
+                extracted_metadata=doc.get("extracted_metadata"),
+            )
+            response_documents.append(response_doc)
+
+        return PaginatedDocumentUploadsResponse(
+            documents=response_documents, next_cursor=next_cursor
+        )
+
+    except Exception as e:
+
+        logger.error(f"Error in get_document_uploads: {str(e)}")
+        logger.error(f"Stacktrace: {traceback.format_exc()}")
+
+        logger.error(e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def generate_presigned_url(
+    file_details: Union[MongoFileDetails, ThumbnailDetails, None], s3_client: S3Client
+) -> str:
+    # conditional checks because file/thumbnail details are generated in the background and may not
+    # yet be present when this function is called
+    if file_details is None:
+        return ""
+    if "s3_bucket" not in file_details or "file_key" not in file_details:
+        return ""
+    try:
+        if file_details["s3_bucket"] == AllowedS3Buckets.PUBLIC_BUCKET.value:
+            return file_details["s3_url"]
+        else:
+            return s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": file_details["s3_bucket"],
+                    "Key": file_details["file_key"],
+                },
+                ExpiresIn=3600,
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating pre-signed URL: {str(e)}"
+        )

@@ -18,6 +18,7 @@ from utils.progress_updater import ProgressUpdater
 from utils.file_type_normalizer import normalize_file_type, supported_file_types
 from services.html_web_capture import capture_html
 from services.non_html_web_capture import capture_non_html
+from background.huey_jobs.generate_thumbnail import generate_thumbnail
 
 # Set up logging
 logging.basicConfig(
@@ -102,6 +103,7 @@ async def async_capture(url: str, document_upload_id: str):
                         "message": f"Unsupported file type: {normalized_type}",
                     }
 
+            generate_thumbnail(document_upload_id)
             return result
         except Exception as e:
             await progress_updater.error()

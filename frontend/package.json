@@ -17,6 +17,9 @@
   },
   "dependencies": {
     "@headlessui/vue": "^1.7.22",
+    "@heroicons/vue": "^2.1.5",
+    "@vuelidate/core": "^2.0.3",
+    "@vuelidate/validators": "^2.0.4",
     "axios": "^1.7.2",
     "dompurify": "^3.1.6",
     "epubjs": "^0.3.93",
@@ -28,10 +31,15 @@
     "vue": "^3.4.29",
     "vue-pdf-embed": "^2.0.4",
     "vue-router": "^4.3.3",
+    "vue-toastification": "^2.0.0-rc.5",
+    "vuex": "^4.0.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.8.0",
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/forms": "^0.5.9",
+    "@tailwindcss/typography": "^0.5.15",
     "@tsconfig/node20": "^20.1.4",
     "@types/dompurify": "^3.0.5",
     "@types/epub": "^0.0.11",

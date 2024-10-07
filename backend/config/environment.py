@@ -2,12 +2,23 @@ from pydantic_settings import BaseSettings
 from typing_extensions import Annotated
 
 
+class AppSettings(BaseSettings):
+    api_base_url: Annotated[
+        str, "Base API URL, e.g., https://api.explainerchonk.com"
+    ] = ""
+    app_base_url: Annotated[
+        str, "Base UI URL, e.g., https://app.explainerchonk.com"
+    ] = ""
+
+
 class S3Settings(BaseSettings):
     s3_access_key: Annotated[str, "S3 access key"] = ""
     s3_secret_key: Annotated[str, "S3 secret key"] = ""
     s3_region: Annotated[str, "S3 region"] = ""
     s3_document_bucket: Annotated[str, "S3 document uploads (not public) bucket"] = ""
-    s3_public_bucket: Annotated[str, "S3 document uploads (public access, e.g., web_captures) bucket"] = ""
+    s3_public_bucket: Annotated[
+        str, "S3 document uploads (public access, e.g., web_captures) bucket"
+    ] = ""
     s3_host: Annotated[str, "S3 host"] = ""
 
 
@@ -17,8 +28,39 @@ class MongoSettings(BaseSettings):
     max_pool_size: Annotated[int, "MongoDB max pool size"] = 100
     min_pool_size: Annotated[int, "MongoDB min pool size"] = 1
 
+
 class PineconeSettings(BaseSettings):
     pinecone_api_key: Annotated[str, "Pinecone API key"] = ""
 
+
 class OpenAISettings(BaseSettings):
     openai_api_key: Annotated[str, "OpenAI API key"] = ""
+
+
+class PopplerSettings(BaseSettings):
+    poppler_path: Annotated[
+        str,
+        "The path to the poppler installation, used by pdf2image (convert_to_bytes)",
+    ] = ""
+
+
+class CryptoSettings(BaseSettings):
+    secret_key: Annotated[str, "Encrpytion key for passwords, signatures"] = ""
+    algorithm: Annotated[str, "Algorithm for encryption (passwords)"] = "HS256"
+    access_token_expiration_minutes: Annotated[
+        int, "Default TTL for JWT access token in minutes"
+    ] = 10
+    refresh_token_expiration_days: Annotated[
+        int, "Default TTL for JWT refresh token"
+    ] = 7
+
+
+class DataSettings(BaseSettings):
+    path_to_geoip_db: Annotated[str, "Path to the GeoLite MMDB of IP mappings"] = ""
+
+
+class EmailSettings(BaseSettings):
+    postmark_api_key: Annotated[str, "Postmark API Key"] = ""
+    default_sender_email: Annotated[
+        str, "Default email sender, e.g., thomas@explainerchonk.com"
+    ] = ""
