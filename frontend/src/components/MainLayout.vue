@@ -90,6 +90,7 @@ import JSONViewer from '@/components/Viewers/JSONViewer.vue'
 import MarkdownViewer from '@/components/Viewers/MarkdownViewer.vue'
 import DocxViewer from '@/components/Viewers/DocxViewer.vue'
 import SpreadsheetViewer from '@/components/Viewers/SpreadsheetViewer.vue'
+import NotepadComponent from '@/components/NotepadComponent.vue'
 import type { DocumentDetails } from '@/types'
 
 export default defineComponent({
@@ -105,7 +106,8 @@ export default defineComponent({
     JSONViewer,
     MarkdownViewer,
     DocxViewer,
-    SpreadsheetViewer
+    SpreadsheetViewer,
+    NotepadComponent
   },
   props: {
     documentId: {
@@ -127,7 +129,8 @@ export default defineComponent({
     const tabs = [
       { name: 'summary', label: 'Summary', component: SummaryAI },
       { name: 'highlight', label: 'Highlight & Explain', component: HighlightExplain },
-      { name: 'chat', label: 'Chat', component: ChatSection }
+      { name: 'chat', label: 'Chat', component: ChatSection },
+      { name: 'notepad', label: 'Notepad', component: NotepadComponent }
     ]
 
     const currentTabComponent = computed(() => {
