@@ -72,6 +72,10 @@ class ThumbnailDetails(TypedDict):
     s3_url: Annotated[str, "Full S3 URL of the thumbnail"]
 
 
+class Note(TypedDict):
+    content: Annotated[str, "Content of the note"]
+
+
 class MongoDocumentUpload(TypedDict):
     _id: Annotated[ObjectId, "MongoDB ObjectId"]
     file_details: Annotated[MongoFileDetails, "Details of the uploaded file"]
@@ -88,6 +92,7 @@ class MongoDocumentUpload(TypedDict):
     thumbnail: Optional[
         Annotated[ThumbnailDetails, "Details of the document thumbnail"]
     ]
+    note: Optional[Annotated[Note, "End User notes on the document"]]
 
 
 def generate_s3_key_for_file(

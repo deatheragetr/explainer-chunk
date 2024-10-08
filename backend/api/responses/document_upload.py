@@ -8,6 +8,10 @@ class ThumbnailInfo(BaseModel):
     presigned_url: str
 
 
+class NoteResponse(BaseModel):
+    content: Annotated[str, "Content of the note"]
+
+
 class DocumentUploadResponse(BaseModel):
     id: Annotated[str, "Primary identifier of the document (Mongo Primary Key)"]
     file_name: Annotated[str, "Original File Name"]
@@ -15,6 +19,7 @@ class DocumentUploadResponse(BaseModel):
     url_friendly_file_name: Annotated[
         str, "URL friendly version of file_name (no spaces, non-ASCII chars, etc.)"
     ]
+    note: Annotated[Optional[NoteResponse], "End User notes on the document"]
 
 
 class DocumentRetrieveResponseForPage(DocumentUploadResponse):
