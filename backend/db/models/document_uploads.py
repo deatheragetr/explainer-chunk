@@ -166,7 +166,8 @@ def get_display_title(document: Mapping[str, Any]) -> str:
     Determine the display title for a document based on precedence rules:
     1. Custom title if exists
     2. Extracted metadata title if exists
-    3. Fallback to file name
+    3. Extracted metadata /Title (capital slash T) if exists
+    4. Fallback to file name
     """
     # 1. Custom title if exists
     if document.get("custom_title"):
@@ -178,5 +179,11 @@ def get_display_title(document: Mapping[str, Any]) -> str:
     ).get("title"):
         return cast(str, document.get("extracted_metadata", {}).get("title"))
 
-    # 3. Fallback to file name
+    # 3. Extracted metadata Title (capital T) if exists
+    if document.get("extracted_metadata") and document.get(
+        "extracted_metadata", {}
+    ).get("/Title"):
+        return cast(str, document.get("extracted_metadata", {}).get("/Title"))
+
+    # 4. Fallback to file name
     return document["file_details"]["file_name"]
