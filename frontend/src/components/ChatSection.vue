@@ -147,7 +147,8 @@ export default defineComponent({
   props: {
     documentUploadId: {
       type: String,
-      required: true
+      required: false,
+      default: null
     }
   },
   setup(props) {
@@ -181,6 +182,12 @@ export default defineComponent({
     }
 
     const connectWebSocket = () => {
+      if (!props.documentUploadId) {
+        console.error('Cannot connect WebSocket: documentUploadId is null')
+        handleError('Document ID is missing. Please try again.')
+        return
+      }
+
       socket = new WebSocket(
         `ws://localhost:8000/ws/document-upload/${props.documentUploadId}/chat`
       )
@@ -261,6 +268,11 @@ export default defineComponent({
     }
 
     const sendMessage = async () => {
+      if (!props.documentUploadId) {
+        handleError('Document ID is missing. Cannot send message.')
+        return
+      }
+
       if (userInput.value.trim() && !isLoading.value) {
         isLoading.value = true
         error.value = ''
@@ -304,11 +316,18 @@ export default defineComponent({
     }
 
     const formatMessage = (text: string) => {
-      const html = marked.parse(text)
+      // marked.parse returns a Promise in newer versions, so we need to handle it synchronously
+      const html = marked.parse(text) as string
       return DOMPurify.sanitize(html)
     }
 
     const fetchChatHistory = async (before: string | null = null) => {
+      if (!props.documentUploadId) {
+        console.error('Cannot fetch chat history: documentUploadId is null')
+        handleError('Document ID is missing. Cannot load chat history.')
+        return null
+      }
+
       try {
         const response = await axios.get(
           `http://localhost:8000/documents/${props.documentUploadId}/chat/messages`,

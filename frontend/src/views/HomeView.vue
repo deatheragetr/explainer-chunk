@@ -61,7 +61,7 @@
                   <img
                     v-if="doc.thumbnail && doc.thumbnail.presigned_url"
                     :src="doc.thumbnail.presigned_url"
-                    :alt="doc.file_name"
+                    :alt="doc.title"
                     class="w-full h-full object-cover"
                   />
                   <div
@@ -85,7 +85,8 @@
                   </div>
                 </div>
                 <div class="p-4">
-                  <h2 class="text-lg font-semibold text-gray-800 truncate">{{ doc.file_name }}</h2>
+                  <h2 class="text-lg font-semibold text-gray-800 truncate">{{ doc.title }}</h2>
+                  <p class="text-sm text-gray-500 mt-1 truncate">{{ doc.file_name }}</p>
                   <p class="text-sm text-gray-600 mt-1">{{ formatFileType(doc.file_type) }}</p>
                 </div>
               </div>
@@ -122,6 +123,8 @@ interface Document {
   file_name: string
   file_type: string
   url_friendly_file_name: string
+  title: string
+  custom_title?: string
   thumbnail?: {
     presigned_url: string
   }
@@ -210,18 +213,7 @@ export default defineComponent({
 
 <style scoped>
 .thumbnail-container {
-  width: 100%;
-  padding-top: 100%; /* This creates a 1:1 aspect ratio */
-  position: relative;
+  height: 160px;
   overflow: hidden;
-}
-
-.thumbnail-container > img,
-.thumbnail-container > div {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
 }
 </style>

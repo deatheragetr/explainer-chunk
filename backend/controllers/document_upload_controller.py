@@ -11,8 +11,14 @@ from db.models.document_uploads import (
     ThumbnailDetails,
     MongoFileDetails,
     Note,
+    get_display_title,
 )
-from api.requests.document_upload import DocumentUploadRequest, NoteRequest
+from api.requests.document_upload import (
+    DocumentUploadRequest,
+    NoteRequest,
+    CustomTitleRequest,
+    DocumentUpdateRequest,
+)
 from api.responses.document_upload import (
     DocumentUploadResponse,
     DocumentRetrieveResponse,
@@ -48,6 +54,13 @@ async def upload_document_from_import():
         return DocumentUploadImportExternalResponse(id=str(ObjectId()))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Helper function to convert Note to NoteResponse
+def note_to_response(note: Optional[Note]) -> Optional[NoteResponse]:
+    if note is None:
+        return None
+    return NoteResponse(content=note.get("content", ""))
 
 
 @router.post(
@@ -87,6 +100,7 @@ async def upload_document(
             ),
             extracted_text=reqBody.extracted_text,
             extracted_metadata=reqBody.extracted_metadata,
+            custom_title=None,
             openai_assistants=[],
             chats=[],
             thumbnail=None,
@@ -103,12 +117,16 @@ async def upload_document(
                 status_code=409, detail="Document with this ID already exists"
             )
 
+        display_title = get_display_title(document)
+
         return DocumentUploadResponse(
             id=str(result.inserted_id),
             file_name=document["file_details"]["file_name"],
             url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
             file_type=document["file_details"]["file_type"],
-            note=document.get("note", None),
+            note=note_to_response(document.get("note")),
+            custom_title=document.get("custom_title"),
+            title=display_title,
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -128,7 +146,8 @@ async def get_document(
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
         # Avoid fetching the entire document, with the potentially long extracted text
         document = await collection.find_one(
-            {"_id": obj_id}, {"_id": 1, "file_details": 1}
+            {"_id": obj_id},
+            {"_id": 1, "file_details": 1, "custom_title": 1, "extracted_metadata": 1},
         )
 
         if not document:
@@ -151,13 +170,17 @@ async def get_document(
                 status_code=500, detail=f"Error generating pre-signed URL: {str(e)}"
             )
 
+        display_title = get_display_title(document)
+
         return DocumentRetrieveResponse(
             id=str(document["_id"]),
             file_name=document["file_details"]["file_name"],
             url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
             file_type=document["file_details"]["file_type"],
             presigned_url=presigned_url,
-            note=document.get("note", None),
+            note=note_to_response(document.get("note")),
+            custom_title=document.get("custom_title"),
+            title=display_title,
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID")
@@ -180,7 +203,13 @@ async def get_document_uploads(
         cursor = (
             collection.find(
                 query,
-                {"_id": 1, "file_details": 1, "thumbnail": 1, "extracted_metadata": 1},
+                {
+                    "_id": 1,
+                    "file_details": 1,
+                    "thumbnail": 1,
+                    "extracted_metadata": 1,
+                    "custom_title": 1,
+                },
             )
             .sort("_id", -1)
             .limit(limit + 1)
@@ -196,6 +225,8 @@ async def get_document_uploads(
         response_documents: List[DocumentRetrieveResponseForPage] = []
         for doc in documents:
             presigned_url = generate_presigned_url(doc.get("thumbnail", {}), s3_client)
+            display_title = get_display_title(doc)
+
             response_doc = DocumentRetrieveResponseForPage(
                 id=str(doc["_id"]),
                 file_name=doc["file_details"]["file_name"],
@@ -203,7 +234,9 @@ async def get_document_uploads(
                 url_friendly_file_name=doc["file_details"]["url_friendly_file_name"],
                 thumbnail=ThumbnailInfo(presigned_url=presigned_url),
                 extracted_metadata=doc.get("extracted_metadata"),
-                note=doc.get("note"),
+                note=note_to_response(doc.get("note")),
+                custom_title=doc.get("custom_title"),
+                title=display_title,
             )
             response_documents.append(response_doc)
 
@@ -281,7 +314,12 @@ async def get_note(
         document = await db.document_uploads.find_one({"_id": obj_id}, {"note": 1})
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
-        return NoteResponse(content=document.get("note", {}).get("content", ""))
+
+        note_content = ""
+        if document.get("note") and isinstance(document["note"], dict):
+            note_content = document["note"].get("content", "")
+
+        return NoteResponse(content=note_content)
     except HTTPException as e:
         raise e
     except ValueError:
@@ -290,4 +328,96 @@ async def get_note(
         logger.error(f"Error retrieving note: {str(e)}")
         raise HTTPException(
             status_code=500, detail="An error occurred while retrieving the note"
+        )
+
+
+@router.patch(
+    "/document-uploads/{document_id}",
+    response_model=DocumentRetrieveResponse,
+)
+async def update_document(
+    document_id: str,
+    update_data: DocumentUpdateRequest,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
+    """
+    Update document properties.
+
+    Currently supports:
+    - custom_title: Custom title for the document
+    """
+    try:
+        obj_id = ObjectId(document_id)
+
+        # Build update dictionary based on provided fields
+        update_dict = {}
+        if update_data.custom_title is not None:
+            update_dict["custom_title"] = update_data.custom_title
+
+        # If no fields to update, return 400
+        if not update_dict:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid fields to update. Supported fields: custom_title",
+            )
+
+        # Update document
+        result = await db.document_uploads.update_one(
+            {"_id": obj_id}, {"$set": update_dict}
+        )
+
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Retrieve the updated document to return
+        document = await db.document_uploads.find_one(
+            {"_id": obj_id},
+            {
+                "_id": 1,
+                "file_details": 1,
+                "custom_title": 1,
+                "extracted_metadata": 1,
+                "note": 1,
+            },
+        )
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Generate presigned URL
+        try:
+            if (
+                document["file_details"]["s3_bucket"]
+                == AllowedS3Buckets.PUBLIC_BUCKET.value
+            ):
+                presigned_url = document["file_details"]["s3_url"]
+            else:
+                presigned_url = generate_presigned_url(
+                    document["file_details"], s3_client
+                )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Error generating pre-signed URL: {str(e)}"
+            )
+
+        display_title = get_display_title(document)
+
+        return DocumentRetrieveResponse(
+            id=str(document["_id"]),
+            file_name=document["file_details"]["file_name"],
+            url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
+            file_type=document["file_details"]["file_type"],
+            presigned_url=presigned_url,
+            note=note_to_response(document.get("note")),
+            custom_title=document.get("custom_title"),
+            title=display_title,
+        )
+    except HTTPException as e:
+        raise e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+    except Exception as e:
+        logger.error(f"Error updating document: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while updating the document"
         )

@@ -8,6 +8,67 @@
           </router-link>
         </div>
 
+        <div v-if="documentTitle" class="flex-1 flex justify-center items-center">
+          <div v-if="isEditingTitle" class="flex items-center">
+            <input
+              ref="titleInput"
+              v-model="editedTitle"
+              class="block w-64 border-b border-indigo-500 focus:ring-indigo-500 focus:border-indigo-500 text-xl font-bold text-gray-900"
+              @keyup.enter="handleSaveTitle"
+              @keyup.esc="cancelEditTitle"
+            />
+            <button @click="handleSaveTitle" class="ml-2 text-indigo-600 hover:text-indigo-800">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+            <button @click="cancelEditTitle" class="ml-1 text-gray-500 hover:text-gray-700">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+          <div v-else class="flex items-center group">
+            <h1 class="text-xl font-bold text-gray-900 truncate">
+              {{ documentTitle || 'No Document Title' }}
+            </h1>
+            <button
+              @click="startEditTitle"
+              class="ml-2 text-transparent group-hover:text-gray-400 hover:text-indigo-600"
+              :disabled="!documentUploadId"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
         <div class="hidden md:flex items-center space-x-4">
           <DocumentUploadModal @document-loaded="handleDocumentLoaded">
             <template #default="{ openModal }">
@@ -111,16 +172,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import DocumentUploadModal from '@/components/DocumentUploadModal.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { logout: authLogout, user } = useAuth()
+const {
+  documentTitle,
+  documentUploadId,
+  isEditingTitle,
+  startEditingTitle,
+  stopEditingTitle,
+  saveTitle
+} = useDocumentTitle()
 
 const mobileMenuOpen = ref(false)
+const editedTitle = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
 
 const toggleMobileMenu = () => {
   mobileMenuOpen.value = !mobileMenuOpen.value
@@ -144,6 +216,34 @@ const handleDocumentLoaded = (documentData: any) => {
   const documentUploadId = documentData.id || documentData.document_upload_id
   const newPath = `/uploads/${documentUploadId}/${documentData.url_friendly_file_name}/read`
   router.push(newPath)
+}
+
+const startEditTitle = () => {
+  editedTitle.value = documentTitle.value
+  startEditingTitle()
+  nextTick(() => {
+    if (titleInput.value) {
+      titleInput.value.focus()
+    }
+  })
+}
+
+const cancelEditTitle = () => {
+  stopEditingTitle()
+}
+
+const handleSaveTitle = async () => {
+  if (!documentUploadId.value || !editedTitle.value.trim()) {
+    stopEditingTitle()
+    return
+  }
+
+  try {
+    await saveTitle(editedTitle.value)
+  } catch (error) {
+    console.error('Error updating document title:', error)
+    // Optionally show an error message to the user
+  }
 }
 </script>
 

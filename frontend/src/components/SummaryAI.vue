@@ -115,7 +115,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onUnmounted, watch } from 'vue'
+import { defineComponent, ref, onUnmounted, watch, computed } from 'vue'
 import axios from 'axios'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -139,7 +139,8 @@ export default defineComponent({
   props: {
     documentUploadId: {
       type: String,
-      required: true
+      required: false,
+      default: null
     }
   },
   setup(props) {
@@ -148,7 +149,8 @@ export default defineComponent({
     const error = ref('')
     const isGenerating = ref(false)
     const progress = ref(0)
-    const canGenerate = ref(true)
+    const canGenerateState = ref(true)
+    const canGenerate = computed(() => canGenerateState.value && !!props.documentUploadId)
     const selectedModel = ref('gpt-4o-mini')
     let websocket: WebSocket | null = null
     let reconnectAttempts = 0
@@ -172,7 +174,7 @@ export default defineComponent({
       error.value = ''
       isGenerating.value = false
       progress.value = 0
-      canGenerate.value = true
+      canGenerateState.value = true
       if (websocket) {
         websocket.close()
         websocket = null
@@ -189,6 +191,11 @@ export default defineComponent({
     )
 
     const connectWebSocket = () => {
+      if (!props.documentUploadId) {
+        console.error('Cannot connect WebSocket: documentUploadId is null')
+        return
+      }
+
       websocket = new WebSocket(
         `ws://localhost:8000/ws/document-upload/${props.documentUploadId}/summary`
       )
@@ -235,9 +242,14 @@ export default defineComponent({
 
     const generateSummary = async () => {
       try {
+        if (!props.documentUploadId) {
+          handleError('No document selected. Please select a document first.')
+          return
+        }
+
         resetState()
         isGenerating.value = true
-        canGenerate.value = false
+        canGenerateState.value = false
 
         connectWebSocket()
 
@@ -253,7 +265,7 @@ export default defineComponent({
     const handleError = (message: string) => {
       error.value = message
       isGenerating.value = false
-      canGenerate.value = true
+      canGenerateState.value = true
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         websocket.close()
       }
