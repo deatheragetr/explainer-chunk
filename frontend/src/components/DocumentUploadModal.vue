@@ -136,8 +136,8 @@ import {
   TransitionChild,
   TransitionRoot
 } from '@headlessui/vue'
-import axios from 'axios'
 import { uploadLargeFile } from '@/utils/fileUpload'
+import api from '@/api/axios'
 import { UnsupportedFileTypeError } from '@/utils/textExtract'
 
 interface ImportProgress {
@@ -322,20 +322,17 @@ export default defineComponent({
           error.value = ''
           importProgress.value = { status: 'Capturing website', progress: 0, payload: {} }
 
-          const importDocRes = await axios.post<ImportDocumentUploadResponse>(
-            'http://localhost:8000/document-uploads/imports',
+          const importDocRes = await api.post<ImportDocumentUploadResponse>(
+            '/document-uploads/imports',
             {}
           )
 
           connectWebSocket(importDocRes.data.id)
 
-          const captureRes = await axios.post<WebsiteCaptureResponse>(
-            'http://localhost:8000/capture-website/',
-            {
-              url: url.value,
-              document_upload_id: importDocRes.data.id
-            }
-          )
+          const captureRes = await api.post<WebsiteCaptureResponse>('/capture-website/', {
+            url: url.value,
+            document_upload_id: importDocRes.data.id
+          })
 
           importProgress.value = { status: 'Complete', progress: 100, payload: captureRes.data }
         } catch (e) {

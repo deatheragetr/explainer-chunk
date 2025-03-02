@@ -128,7 +128,8 @@
 
 <script lang="ts">
 import { defineComponent, ref, inject, watch, computed } from 'vue'
-import axios from 'axios'
+import { useToast } from 'vue-toastification'
+import api from '@/api/axios'
 import ModelSelector from './ModelSelector.vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -251,7 +252,7 @@ export default defineComponent({
           connectWebSocket()
         }
 
-        await axios.post(`http://localhost:8000/documents/${props.documentUploadId}/explanation`, {
+        await api.post(`/documents/${props.documentUploadId}/explanation`, {
           highlighted_text: selectedText.value,
           model: selectedModel.value
         })

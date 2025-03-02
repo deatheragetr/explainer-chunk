@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue'
-import axios from 'axios'
+import api from '@/api/axios'
 
 // Create a reactive state that will be shared between components
 const documentTitle = ref('')
@@ -45,12 +45,9 @@ export function useDocumentTitle() {
     }
 
     try {
-      const response = await axios.patch(
-        `http://localhost:8000/document-uploads/${documentUploadId.value}`,
-        {
-          custom_title: newTitle.trim()
-        }
-      )
+      const response = await api.patch(`/document-uploads/${documentUploadId.value}`, {
+        custom_title: newTitle.trim()
+      })
 
       // Update the document title
       setDocumentTitle(response.data.title)

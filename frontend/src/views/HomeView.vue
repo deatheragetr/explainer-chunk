@@ -99,7 +99,7 @@
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
       </div>
 
-      <div v-if="hasMore" class="flex justify-center mt-8">
+      <div v-if="hasMore && documents.length > 0" class="flex justify-center mt-8">
         <button
           @click="loadMore"
           class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50"
@@ -115,8 +115,8 @@
 // The script section remains unchanged
 import { defineComponent, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import DocumentUploadModal from '@/components/DocumentUploadModal.vue'
+import api from '@/api/axios'
 
 interface Document {
   id: string
@@ -147,7 +147,7 @@ export default defineComponent({
 
       loading.value = true
       try {
-        const response = await axios.get('http://localhost:8000/document-uploads', {
+        const response = await api.get('/document-uploads', {
           params: {
             before: nextCursor.value,
             limit: 12

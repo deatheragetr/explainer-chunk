@@ -89,6 +89,7 @@ class Note(TypedDict):
 
 class MongoDocumentUpload(TypedDict):
     _id: Annotated[ObjectId, "MongoDB ObjectId"]
+    user_id: Annotated[ObjectId, "ID of the user who owns this document"]
     file_details: Annotated[MongoFileDetails, "Details of the uploaded file"]
     extracted_text: Annotated[str, "Extracted text content from the document"]
     extracted_metadata: Optional[

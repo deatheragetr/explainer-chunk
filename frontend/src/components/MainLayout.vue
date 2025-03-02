@@ -71,7 +71,6 @@
 </template>
 
 <script lang="ts">
-import axios from 'axios'
 import {
   defineComponent,
   ref,
@@ -97,6 +96,7 @@ import DocxViewer from '@/components/Viewers/DocxViewer.vue'
 import SpreadsheetViewer from '@/components/Viewers/SpreadsheetViewer.vue'
 import NotepadComponent from '@/components/NotepadComponent.vue'
 import type { DocumentDetails } from '@/types'
+import api from '@/api/axios'
 
 export default defineComponent({
   name: 'MainLayout',
@@ -230,9 +230,7 @@ export default defineComponent({
 
     const fetchDocumentDetails = async (id: string) => {
       try {
-        const response = await axios.get<DocumentDetails>(
-          `http://localhost:8000/document-uploads/${id}`
-        )
+        const response = await api.get<DocumentDetails>(`/document-uploads/${id}`)
         contentUrl.value = response.data.presigned_url
         setDocumentId(id)
         fileType.value = response.data.file_type

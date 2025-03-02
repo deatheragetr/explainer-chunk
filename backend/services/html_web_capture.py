@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, cast
 from bs4 import BeautifulSoup
 from bson import ObjectId
 from aiohttp import ClientSession, ClientResponse
@@ -38,6 +38,7 @@ async def capture_html(
     url: str,
     response: ClientResponse,
     document_upload_id: str,
+    user_id: str,
     logger: Logger,
 ) -> Dict[str, str]:
     try:
@@ -145,27 +146,35 @@ async def capture_html(
             modified_html_content.encode("utf-8"), "text/html"
         )
 
-        document = MongoDocumentUpload(
-            _id=ObjectId(document_upload_id),
-            file_details=mongo_file_details,
-            extracted_text=extracted_text,
-            extracted_metadata=extracted_metadata,
-            openai_assistants=[],
-        )
+        # Create document in MongoDB
+        document_data = {
+            "_id": ObjectId(document_upload_id),
+            "user_id": ObjectId(user_id),
+            "file_details": mongo_file_details,
+            "extracted_text": extracted_text,
+            "extracted_metadata": extracted_metadata,
+            "openai_assistants": [],
+            "chats": [],
+            "thumbnail": None,
+            "note": None,
+        }
+
         # TODO: Grab default model config for user
         openai_assistant_service = OpenAIAssistantService(
             openai_api_key=openai_settings.openai_api_key
         )
         assistant_details = await openai_assistant_service.create_assistant_thread(
             model_config=DEFAULT_MODEL_CONFIGS["gpt-4o-mini"],
-            document=document,
+            document=cast(MongoDocumentUpload, document_data),
             mongo_collection=mongo_collection,
         )
-        document["openai_assistants"].append(assistant_details)
+
+        # Add the assistant details to the document
+        document_data["openai_assistants"] = [assistant_details]
 
         await mongo_collection.update_one(
             {"_id": ObjectId(document_upload_id)},
-            {"$set": document},
+            {"$set": document_data},
             upsert=True,
         )
 
@@ -175,9 +184,7 @@ async def capture_html(
                 file_type="text/html",
                 file_name="index.html",
                 document_upload_id=document_upload_id,
-                url_friendly_file_name=document["file_details"][
-                    "url_friendly_file_name"
-                ],
+                url_friendly_file_name=mongo_file_details["url_friendly_file_name"],
             )
         )
 

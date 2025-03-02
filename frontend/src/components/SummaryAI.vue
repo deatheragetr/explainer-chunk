@@ -116,7 +116,8 @@
 
 <script lang="ts">
 import { defineComponent, ref, onUnmounted, watch, computed } from 'vue'
-import axios from 'axios'
+import { useToast } from 'vue-toastification'
+import api from '@/api/axios'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import ModelSelector from './ModelSelector.vue'
@@ -254,7 +255,7 @@ export default defineComponent({
         connectWebSocket()
 
         // Trigger summary generation with selected model
-        await axios.post(`http://localhost:8000/documents/${props.documentUploadId}/summary`, {
+        await api.post(`/documents/${props.documentUploadId}/summary`, {
           model: selectedModel.value
         })
       } catch (e) {

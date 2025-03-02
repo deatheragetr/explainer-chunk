@@ -16,7 +16,6 @@ from db.models.document_uploads import (
 from api.requests.document_upload import (
     DocumentUploadRequest,
     NoteRequest,
-    CustomTitleRequest,
     DocumentUpdateRequest,
 )
 from api.responses.document_upload import (
@@ -38,6 +37,8 @@ from pymongo.errors import DuplicateKeyError
 from config.s3 import s3_client, S3Client
 from config.logger import get_logger
 from background.huey_jobs.process_document_job import process_document
+from api.utils.auth_helper import get_current_user
+from db.models.user import MongoUser
 
 logger = get_logger()
 
@@ -52,8 +53,13 @@ async def upload_document_from_import():
     try:
         # TODO: Push to redis websocket list along with user data
         return DocumentUploadImportExternalResponse(id=str(ObjectId()))
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error creating import: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while creating the import"
+        )
 
 
 # Helper function to convert Note to NoteResponse
@@ -70,6 +76,7 @@ def note_to_response(note: Optional[Note]) -> Optional[NoteResponse]:
 async def upload_document(
     reqBody: Annotated[DocumentUploadRequest, Body()],
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
 ):
     # register file with S3 and save to MongoDB
     try:
@@ -87,9 +94,12 @@ async def upload_document(
         ):
             raise HTTPException(status_code=404, detail="File not found")
 
+        print(f"Current user ID: {current_user['_id']}")
+
         # Save to MongoDB
         document = MongoDocumentUpload(
             _id=doc_id,
+            user_id=ObjectId(current_user["_id"]),
             file_details=create_mongo_file_details(
                 file_name=reqBody.file_name,
                 file_type=reqBody.file_type,
@@ -128,25 +138,33 @@ async def upload_document(
             custom_title=document.get("custom_title"),
             title=display_title,
         )
+    except HTTPException as e:
+        raise e
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error uploading document: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while uploading the document"
+        )
 
 
 @router.get("/document-uploads/{document_id}", response_model=DocumentRetrieveResponse)
 async def get_document(
-    document_id: str, db: TypedAsyncIOMotorDatabase = Depends(get_db)
+    document_id: str,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
 ):
     try:
         # Convert string to ObjectId
         obj_id = ObjectId(document_id)
+        user_id = ObjectId(current_user["_id"])
 
         # Retrieve document from MongoDB
         collection: AsyncIOMotorCollection[MongoDocumentUpload] = db.document_uploads
         # Avoid fetching the entire document, with the potentially long extracted text
         document = await collection.find_one(
-            {"_id": obj_id},
+            {"_id": obj_id, "user_id": user_id},
             {"_id": 1, "file_details": 1, "custom_title": 1, "extracted_metadata": 1},
         )
 
@@ -182,10 +200,15 @@ async def get_document(
             custom_title=document.get("custom_title"),
             title=display_title,
         )
+    except HTTPException as e:
+        raise e
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching document: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching the document"
+        )
 
 
 @router.get("/document-uploads", response_model=PaginatedDocumentUploadsResponse)
@@ -193,12 +216,17 @@ async def get_document_uploads(
     before: Optional[str] = Query(None, description="Cursor for pagination"),
     limit: int = Query(10, ge=1, le=100, description="Number of documents to return"),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
 ):
     try:
         collection = db.document_uploads
-        query = {}
+        user_id = ObjectId(current_user["_id"])
+
+        # Construct query based on pagination
         if before:
-            query["_id"] = {"$lt": ObjectId(before)}
+            query = {"user_id": user_id, "_id": {"$lt": ObjectId(before)}}
+        else:
+            query = {"user_id": user_id}
 
         cursor = (
             collection.find(
@@ -243,14 +271,18 @@ async def get_document_uploads(
         return PaginatedDocumentUploadsResponse(
             documents=response_documents, next_cursor=next_cursor
         )
-
+    except HTTPException as e:
+        raise e
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid document ID or pagination parameter"
+        )
     except Exception as e:
-
         logger.error(f"Error in get_document_uploads: {str(e)}")
         logger.error(f"Stacktrace: {traceback.format_exc()}")
-
-        logger.error(e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching documents"
+        )
 
 
 def generate_presigned_url(
@@ -285,14 +317,24 @@ async def save_note(
     document_upload_id: str,
     content: NoteRequest,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
 ):
     try:
         obj_id = ObjectId(document_upload_id)
-        result = await db.document_uploads.update_one(
+        user_id = ObjectId(current_user["_id"])
+
+        # First check if the document belongs to the current user
+        document = await db.document_uploads.find_one(
+            {"_id": obj_id, "user_id": user_id}, {"_id": 1}
+        )
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        await db.document_uploads.update_one(
             {"_id": obj_id}, {"$set": {"note": Note(content=content.content)}}
         )
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Document not found")
+
         return NoteResponse(content=content.content)
     except HTTPException as e:
         raise e
@@ -307,11 +349,17 @@ async def save_note(
 
 @router.get("/document-uploads/{document_upload_id}/note", response_model=NoteResponse)
 async def get_note(
-    document_upload_id: str, db: TypedAsyncIOMotorDatabase = Depends(get_db)
+    document_upload_id: str,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
 ):
     try:
         obj_id = ObjectId(document_upload_id)
-        document = await db.document_uploads.find_one({"_id": obj_id}, {"note": 1})
+        user_id = ObjectId(current_user["_id"])
+
+        document = await db.document_uploads.find_one(
+            {"_id": obj_id, "user_id": user_id}, {"note": 1}
+        )
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -339,6 +387,7 @@ async def update_document(
     document_id: str,
     update_data: DocumentUpdateRequest,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
 ):
     """
     Update document properties.
@@ -348,6 +397,15 @@ async def update_document(
     """
     try:
         obj_id = ObjectId(document_id)
+        user_id = ObjectId(current_user["_id"])
+
+        # First check if the document belongs to the current user
+        document_check = await db.document_uploads.find_one(
+            {"_id": obj_id, "user_id": user_id}, {"_id": 1}
+        )
+
+        if not document_check:
+            raise HTTPException(status_code=404, detail="Document not found")
 
         # Build update dictionary based on provided fields
         update_dict = {}
@@ -362,12 +420,7 @@ async def update_document(
             )
 
         # Update document
-        result = await db.document_uploads.update_one(
-            {"_id": obj_id}, {"$set": update_dict}
-        )
-
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Document not found")
+        await db.document_uploads.update_one({"_id": obj_id}, {"$set": update_dict})
 
         # Retrieve the updated document to return
         document = await db.document_uploads.find_one(
