@@ -94,8 +94,6 @@ async def upload_document(
         ):
             raise HTTPException(status_code=404, detail="File not found")
 
-        print(f"Current user ID: {current_user['_id']}")
-
         # Save to MongoDB
         document = MongoDocumentUpload(
             _id=doc_id,
