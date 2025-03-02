@@ -57,7 +57,7 @@ async def get_mongo_client(
         client.close()
 
 
-async def async_capture(url: str, document_upload_id: str, user_id: str):
+async def async_capture(url: str, document_upload_id: str):
     async with get_redis_client() as redis_client, get_session() as session, get_mongo_client(
         "document_uploads"
     ) as mongo_collection:
@@ -83,7 +83,6 @@ async def async_capture(url: str, document_upload_id: str, user_id: str):
                         url,
                         response,
                         document_upload_id,
-                        user_id,
                         logger,
                     )
                 elif normalized_type in supported_file_types.values():
@@ -94,7 +93,7 @@ async def async_capture(url: str, document_upload_id: str, user_id: str):
                         url,
                         response,
                         document_upload_id,
-                        user_id,
+                        normalized_type,
                         logger,
                     )
                 else:
@@ -116,12 +115,10 @@ async def async_capture(url: str, document_upload_id: str, user_id: str):
 
 
 @huey.task()
-def capture_website(url: str, document_upload_id: str, user_id: str):
-    logger.info(
-        f"Starting capture_website task: URL={url}, ID={document_upload_id}, User ID={user_id}"
-    )
+def capture_website(url: str, document_upload_id: str):
+    logger.info(f"Starting capture_website task: URL={url}, ID={document_upload_id}")
     try:
-        result = asyncio.run(async_capture(url, document_upload_id, user_id))
+        result = asyncio.run(async_capture(url, document_upload_id))
         logger.info(
             f"Finished capture_website task: URL={url}, ID={document_upload_id}"
         )

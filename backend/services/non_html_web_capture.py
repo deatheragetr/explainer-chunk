@@ -1,5 +1,7 @@
-from typing import Dict, cast
+from urllib.parse import urlparse
+from typing import Dict
 from logging import Logger
+import os
 from bson import ObjectId
 from aiohttp import ClientSession, ClientResponse
 
@@ -26,31 +28,6 @@ openai_settings = OpenAISettings()
 from config.ai_models import DEFAULT_MODEL_CONFIGS
 
 
-def get_file_extension_from_content_type(content_type: str) -> str:
-    """Get file extension based on content type."""
-    content_type = content_type.split(";")[0].strip().lower()
-
-    extension_map = {
-        "application/pdf": ".pdf",
-        "application/msword": ".doc",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-        "application/vnd.ms-excel": ".xls",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-        "application/vnd.ms-powerpoint": ".ppt",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
-        "text/plain": ".txt",
-        "text/csv": ".csv",
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/gif": ".gif",
-        "application/json": ".json",
-        "application/xml": ".xml",
-        "text/xml": ".xml",
-    }
-
-    return extension_map.get(content_type, ".bin")
-
-
 async def capture_non_html(
     progress_updater: ProgressUpdater,
     session: ClientSession,
@@ -58,65 +35,65 @@ async def capture_non_html(
     url: str,
     response: ClientResponse,
     document_upload_id: str,
-    user_id: str,
+    normalized_file_type: str,
     logger: Logger,
 ) -> Dict[str, str]:
     try:
-        content_type = response.headers.get("Content-Type", "application/octet-stream")
-        file_extension = get_file_extension_from_content_type(content_type)
-        file_name = f"download{file_extension}"
-
-        # Download the file content
         await progress_updater.update(50)
-        file_content = await response.read()
+        content = await response.read()
+        content_type = response.headers.get(
+            "content-type", "application/octet-stream"
+        ).split(";")[0]
+        file_name = os.path.basename(urlparse(url).path) or "downloaded_file"
 
-        # Store the file in S3
-        await progress_updater.update(70)
         s3_key = generate_s3_key_for_file(
-            folder=AllowedFolders.WEB_CAPTURES,
+            folder=AllowedFolders.DOCUMENT_UPLOADS,
             object_id=ObjectId(document_upload_id),
             file_name=file_name,
         )
+
         s3_client.put_object(
-            Bucket=AllowedS3Buckets.PUBLIC_BUCKET.value,
+            Bucket=AllowedS3Buckets.DOCUMENT_UPLOADS.value,
             Key=s3_key,
-            Body=file_content,
+            Body=content,
             ContentType=content_type,
+        )
+
+        await progress_updater.update(75)
+
+        capture_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": AllowedS3Buckets.DOCUMENT_UPLOADS.value, "Key": s3_key},
+            ExpiresIn=3600,
         )
 
         s3_settings = S3Settings()
         s3_url = generate_s3_url(
-            s3_settings.s3_host, AllowedS3Buckets.PUBLIC_BUCKET, s3_key
+            s3_settings.s3_host, AllowedS3Buckets.DOCUMENT_UPLOADS, s3_key
         )
+
+        await progress_updater.update(85)
         mongo_file_details = create_mongo_file_details(
             file_name=file_name,
-            file_type=content_type,
+            file_type=normalized_file_type,
             file_key=s3_key,
             s3_url=s3_url,
-            s3_bucket=AllowedS3Buckets.PUBLIC_BUCKET.value,
+            s3_bucket=AllowedS3Buckets.DOCUMENT_UPLOADS.value,
             source=SourceType.WEB,
             source_url=url,
         )
 
-        # Extract text and metadata
-        await progress_updater.update(80)
         extracted_text, extracted_metadata = await extract_text_and_metadata(
-            file_content, content_type
+            content, normalized_file_type
         )
 
-        # Create document in MongoDB
-        await progress_updater.update(90)
-        document_data = {
-            "_id": ObjectId(document_upload_id),
-            "user_id": ObjectId(user_id),
-            "file_details": mongo_file_details,
-            "extracted_text": extracted_text,
-            "extracted_metadata": extracted_metadata,
-            "openai_assistants": [],
-            "chats": [],
-            "thumbnail": None,
-            "note": None,
-        }
+        document = MongoDocumentUpload(
+            _id=ObjectId(document_upload_id),
+            file_details=mongo_file_details,
+            extracted_metadata=extracted_metadata,
+            extracted_text=extracted_text,
+            openai_assistants=[],
+        )
 
         # TODO: Grab default model config for user
         openai_assistant_service = OpenAIAssistantService(
@@ -124,32 +101,32 @@ async def capture_non_html(
         )
         assistant_details = await openai_assistant_service.create_assistant_thread(
             model_config=DEFAULT_MODEL_CONFIGS["gpt-4o-mini"],
-            document=cast(MongoDocumentUpload, document_data),
+            document=document,
             mongo_collection=mongo_collection,
         )
-
-        # Add the assistant details to the document
-        document_data["openai_assistants"] = [assistant_details]
+        document["openai_assistants"].append(assistant_details)
 
         await mongo_collection.update_one(
             {"_id": ObjectId(document_upload_id)},
-            {"$set": document_data},
+            {"$set": document},
             upsert=True,
         )
 
         await progress_updater.complete(
             payload=WebCaptureProgressData(
-                presigned_url=s3_url,
-                file_type=content_type,
+                presigned_url=capture_url,
+                file_type=normalized_file_type,
                 file_name=file_name,
                 document_upload_id=document_upload_id,
-                url_friendly_file_name=mongo_file_details["url_friendly_file_name"],
+                url_friendly_file_name=document["file_details"][
+                    "url_friendly_file_name"
+                ],
             )
         )
 
         return {
             "status": "File downloaded and stored successfully",
-            "presigned_url": s3_url,
+            "presigned_url": capture_url,
         }
 
     except Exception as e:
