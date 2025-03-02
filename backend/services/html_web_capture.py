@@ -39,6 +39,7 @@ async def capture_html(
     response: ClientResponse,
     document_upload_id: str,
     logger: Logger,
+    user_id: str,
 ) -> Dict[str, str]:
     try:
         html_content = await response.text()
@@ -147,10 +148,11 @@ async def capture_html(
 
         document = MongoDocumentUpload(
             _id=ObjectId(document_upload_id),
+            user_id=ObjectId(user_id),
             file_details=mongo_file_details,
             extracted_text=extracted_text,
             extracted_metadata=extracted_metadata,
-            openai_assistants=[],
+            chats=[],
         )
         # TODO: Grab default model config for user
         openai_assistant_service = OpenAIAssistantService(
