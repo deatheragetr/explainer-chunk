@@ -30,7 +30,7 @@ watch(
     <NavBar v-if="showNavBar" />
     <div :class="{ 'pt-20': showNavBar }">
       <!-- Increased padding-top from pt-16 to pt-20 -->
-      <RouterView />
+      <RouterView :key="route.fullPath" />
     </div>
   </div>
 </template>

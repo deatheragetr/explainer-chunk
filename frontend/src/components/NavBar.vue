@@ -184,6 +184,8 @@ const handleDocumentLoaded = (documentData: any) => {
   console.log('Document loaded:', documentData)
   const documentUploadId = documentData.id || documentData.document_upload_id
   const newPath = `/uploads/${documentUploadId}/${documentData.url_friendly_file_name}/read`
+
+  // Simply use router.push - the :key on RouterView in App.vue will handle the refresh
   router.push(newPath)
 }
 
