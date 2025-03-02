@@ -8,12 +8,15 @@
           </router-link>
         </div>
 
-        <div v-if="documentTitle" class="flex-1 flex justify-center items-center">
-          <div v-if="isEditingTitle" class="relative w-auto max-w-xl">
+        <div
+          v-if="documentTitle"
+          class="absolute left-0 right-0 mx-auto flex justify-center items-center pointer-events-none"
+        >
+          <div v-if="isEditingTitle" class="relative w-auto max-w-xl pointer-events-auto">
             <input
               ref="titleInput"
               v-model="editedTitle"
-              class="w-full bg-transparent text-2xl font-medium text-gray-800 border-0 focus:ring-0 focus:outline-none py-2"
+              class="w-full bg-transparent text-2xl font-medium text-gray-800 border-0 focus:ring-0 focus:outline-none py-2 text-center"
               @keyup.enter="handleSaveTitle"
               @keyup.esc="cancelEditTitle"
               @blur="handleSaveTitle"
@@ -22,9 +25,9 @@
               class="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-purple-400 to-indigo-500"
             ></div>
           </div>
-          <div v-else class="relative group">
+          <div v-else class="relative group pointer-events-auto">
             <h1
-              class="text-2xl font-medium text-gray-800 truncate max-w-xl cursor-text transition-colors duration-200 ease-in-out"
+              class="text-2xl font-medium text-gray-800 truncate max-w-xl cursor-text transition-colors duration-200 ease-in-out text-center"
               @click="startEditTitle"
             >
               {{ documentTitle || 'No Document Title' }}
