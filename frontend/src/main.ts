@@ -1,3 +1,6 @@
+import '@fortawesome/fontawesome-free/css/all.css'
+import 'prismjs/themes/prism-tomorrow.css'
+import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 import './assets/main.css'
 
 import { createApp } from 'vue'
@@ -10,6 +13,7 @@ import './index.css' // This file will include Tailwind
 import 'pdfjs-dist/web/pdf_viewer.css'
 import Toast from 'vue-toastification'
 import 'vue-toastification/dist/index.css'
+import '@fortawesome/fontawesome-free/css/all.css'
 
 const app = createApp(App)
 

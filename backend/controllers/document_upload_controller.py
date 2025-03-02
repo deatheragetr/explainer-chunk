@@ -10,8 +10,9 @@ from db.models.document_uploads import (
     SourceType,
     ThumbnailDetails,
     MongoFileDetails,
+    Note,
 )
-from api.requests.document_upload import DocumentUploadRequest
+from api.requests.document_upload import DocumentUploadRequest, NoteRequest
 from api.responses.document_upload import (
     DocumentUploadResponse,
     DocumentRetrieveResponse,
@@ -19,6 +20,7 @@ from api.responses.document_upload import (
     PaginatedDocumentUploadsResponse,
     ThumbnailInfo,
     DocumentRetrieveResponseForPage,
+    NoteResponse,
 )
 from api.utils.s3_utils import verify_s3_object
 from typing import Annotated
@@ -88,6 +90,7 @@ async def upload_document(
             openai_assistants=[],
             chats=[],
             thumbnail=None,
+            note=None,
         )
 
         # Kick of background job to process document
@@ -105,6 +108,7 @@ async def upload_document(
             file_name=document["file_details"]["file_name"],
             url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
             file_type=document["file_details"]["file_type"],
+            note=document.get("note", None),
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -153,6 +157,7 @@ async def get_document(
             url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
             file_type=document["file_details"]["file_type"],
             presigned_url=presigned_url,
+            note=document.get("note", None),
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID")
@@ -198,6 +203,7 @@ async def get_document_uploads(
                 url_friendly_file_name=doc["file_details"]["url_friendly_file_name"],
                 thumbnail=ThumbnailInfo(presigned_url=presigned_url),
                 extracted_metadata=doc.get("extracted_metadata"),
+                note=doc.get("note"),
             )
             response_documents.append(response_doc)
 
@@ -238,4 +244,50 @@ def generate_presigned_url(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error generating pre-signed URL: {str(e)}"
+        )
+
+
+@router.put("/document-uploads/{document_upload_id}/note", response_model=NoteResponse)
+async def save_note(
+    document_upload_id: str,
+    content: NoteRequest,
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
+    try:
+        obj_id = ObjectId(document_upload_id)
+        result = await db.document_uploads.update_one(
+            {"_id": obj_id}, {"$set": {"note": Note(content=content.content)}}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return NoteResponse(content=content.content)
+    except HTTPException as e:
+        raise e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+    except Exception as e:
+        logger.error(f"Error saving note: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while saving the note"
+        )
+
+
+@router.get("/document-uploads/{document_upload_id}/note", response_model=NoteResponse)
+async def get_note(
+    document_upload_id: str, db: TypedAsyncIOMotorDatabase = Depends(get_db)
+):
+    try:
+        obj_id = ObjectId(document_upload_id)
+        document = await db.document_uploads.find_one({"_id": obj_id}, {"note": 1})
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return NoteResponse(content=document.get("note", {}).get("content", ""))
+    except HTTPException as e:
+        raise e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+    except Exception as e:
+        logger.error(f"Error retrieving note: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while retrieving the note"
         )
