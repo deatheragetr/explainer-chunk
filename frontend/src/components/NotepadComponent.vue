@@ -78,7 +78,8 @@ export default defineComponent({
   props: {
     documentUploadId: {
       type: String,
-      required: true
+      required: false,
+      default: null
     }
   },
   setup(props) {
@@ -145,6 +146,11 @@ export default defineComponent({
     }
 
     const loadNote = async () => {
+      if (!props.documentUploadId) {
+        console.warn('Cannot load note: documentUploadId is null')
+        return
+      }
+
       try {
         const response = await api.get(`/document-uploads/${props.documentUploadId}/note`)
         console.log('response: ', response)
@@ -160,6 +166,11 @@ export default defineComponent({
     }
 
     const saveNote = async () => {
+      if (!props.documentUploadId) {
+        console.warn('Cannot save note: documentUploadId is null')
+        return
+      }
+
       if (cmInstance) {
         try {
           const content = cmInstance.getValue()

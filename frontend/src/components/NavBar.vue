@@ -8,6 +8,36 @@
           </router-link>
         </div>
 
+        <div
+          v-if="documentTitle"
+          class="absolute left-0 right-0 mx-auto flex justify-center items-center pointer-events-none"
+        >
+          <div v-if="isEditingTitle" class="relative w-auto max-w-xl pointer-events-auto">
+            <input
+              ref="titleInput"
+              v-model="editedTitle"
+              class="w-full bg-transparent text-2xl font-medium text-gray-800 border-0 focus:ring-0 focus:outline-none py-2 text-center"
+              @keyup.enter="handleSaveTitle"
+              @keyup.esc="cancelEditTitle"
+              @blur="handleSaveTitle"
+            />
+            <div
+              class="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-purple-400 to-indigo-500"
+            ></div>
+          </div>
+          <div v-else class="relative group pointer-events-auto">
+            <h1
+              class="text-2xl font-medium text-gray-800 truncate max-w-xl cursor-text transition-colors duration-200 ease-in-out text-center"
+              @click="startEditTitle"
+            >
+              {{ documentTitle || 'No Document Title' }}
+            </h1>
+            <div
+              class="absolute -bottom-1 left-0 w-full h-px bg-gradient-to-r from-transparent via-indigo-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            ></div>
+          </div>
+        </div>
+
         <div class="hidden md:flex items-center space-x-4">
           <DocumentUploadModal @document-loaded="handleDocumentLoaded">
             <template #default="{ openModal }">
@@ -111,16 +141,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import DocumentUploadModal from '@/components/DocumentUploadModal.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { logout: authLogout, user } = useAuth()
+const {
+  documentTitle,
+  documentUploadId,
+  isEditingTitle,
+  startEditingTitle,
+  stopEditingTitle,
+  saveTitle
+} = useDocumentTitle()
 
 const mobileMenuOpen = ref(false)
+const editedTitle = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
 
 const toggleMobileMenu = () => {
   mobileMenuOpen.value = !mobileMenuOpen.value
@@ -143,7 +184,37 @@ const handleDocumentLoaded = (documentData: any) => {
   console.log('Document loaded:', documentData)
   const documentUploadId = documentData.id || documentData.document_upload_id
   const newPath = `/uploads/${documentUploadId}/${documentData.url_friendly_file_name}/read`
+
+  // Simply use router.push - the :key on RouterView in App.vue will handle the refresh
   router.push(newPath)
+}
+
+const startEditTitle = () => {
+  editedTitle.value = documentTitle.value
+  startEditingTitle()
+  nextTick(() => {
+    if (titleInput.value) {
+      titleInput.value.focus()
+    }
+  })
+}
+
+const cancelEditTitle = () => {
+  stopEditingTitle()
+}
+
+const handleSaveTitle = async () => {
+  if (!documentUploadId.value || !editedTitle.value.trim()) {
+    stopEditingTitle()
+    return
+  }
+
+  try {
+    await saveTitle(editedTitle.value)
+  } catch (error) {
+    console.error('Error updating document title:', error)
+    // Optionally show an error message to the user
+  }
 }
 </script>
 
@@ -181,5 +252,29 @@ nav {
   .home-link::after {
     bottom: -2px;
   }
+}
+
+h1 {
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+
+input {
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  caret-color: #6366f1;
+  transition: all 0.2s ease;
+}
+
+input:focus {
+  transform: scale(1.01);
 }
 </style>

@@ -7,8 +7,6 @@
       @mouseup="handleTextSelection"
     >
       <div class="p-6">
-        <!-- <h2 class="text-3xl font-extrabold mb-6 text-indigo-800 tracking-tight">Document Viewer</h2>
-        <DocumentUploadModal @document-loaded="handleDocumentLoaded" /> -->
         <div class="mt-6">
           <component
             :is="currentViewer"
@@ -63,10 +61,7 @@
             leave-to-class="opacity-0 translate-y-1"
           >
             <keep-alive>
-              <component
-                :is="currentTabComponent"
-                :document-upload-id="documentUploadId"
-              ></component>
+              <component :is="currentTabComponent" :document-upload-id="safeDocumentId"></component>
             </keep-alive>
           </transition>
         </div>
@@ -76,9 +71,18 @@
 </template>
 
 <script lang="ts">
-import axios from 'axios'
-import { defineComponent, ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import {
+  defineComponent,
+  ref,
+  computed,
+  onMounted,
+  onUnmounted,
+  provide,
+  nextTick,
+  watch
+} from 'vue'
 import { useRouter } from 'vue-router'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import DocumentUploadModal from './DocumentUploadModal.vue'
 import SummaryAI from '@/components/SummaryAI.vue'
 import HighlightExplain from './HighlightExplain.vue'
@@ -92,6 +96,7 @@ import DocxViewer from '@/components/Viewers/DocxViewer.vue'
 import SpreadsheetViewer from '@/components/Viewers/SpreadsheetViewer.vue'
 import NotepadComponent from '@/components/NotepadComponent.vue'
 import type { DocumentDetails } from '@/types'
+import api from '@/api/axios'
 
 export default defineComponent({
   name: 'MainLayout',
@@ -118,13 +123,19 @@ export default defineComponent({
   setup(props) {
     const router = useRouter()
     const contentUrl = ref('')
-    const documentUploadId = ref<string | null>(null)
     const currentTab = ref('summary')
     const leftPanelWidth = ref(window.innerWidth / 2)
     const rightPanelWidth = ref(window.innerWidth / 2)
     const isDragging = ref(false)
     const fileType = ref('')
     const selectedText = ref('')
+    const fileName = ref('')
+
+    // Use the document title composable
+    const { documentTitle, documentUploadId, setDocumentTitle, setDocumentId } = useDocumentTitle()
+
+    // Create a computed property for the document ID that is always a string or undefined (not null)
+    const safeDocumentId = computed(() => documentUploadId.value || undefined)
 
     const tabs = [
       { name: 'summary', label: 'Summary', component: SummaryAI },
@@ -181,10 +192,17 @@ export default defineComponent({
       } else {
         contentUrl.value = documentData.presigned_url || documentData.url || ''
       }
-      documentUploadId.value = documentData.id || documentData.document_upload_id
+      const docId = documentData.id || documentData.document_upload_id
+      setDocumentId(docId)
       fileType.value = documentData.file_type
-      const newPath = `/uploads/${documentUploadId.value}/${documentData.url_friendly_file_name}/read`
-      router.push(newPath)
+
+      if (docId) {
+        const newPath = `/uploads/${docId}/${documentData.url_friendly_file_name}/read`
+        router.push(newPath)
+      }
+
+      fileName.value = documentData.file_name
+      setDocumentTitle(documentData.title)
     }
 
     const startDragging = (e: MouseEvent) => {
@@ -212,12 +230,12 @@ export default defineComponent({
 
     const fetchDocumentDetails = async (id: string) => {
       try {
-        const response = await axios.get<DocumentDetails>(
-          `http://localhost:8000/document-uploads/${id}`
-        )
+        const response = await api.get<DocumentDetails>(`/document-uploads/${id}`)
         contentUrl.value = response.data.presigned_url
-        documentUploadId.value = id
+        setDocumentId(id)
         fileType.value = response.data.file_type
+        fileName.value = response.data.file_name
+        setDocumentTitle(response.data.title)
       } catch (error) {
         console.error('Error fetching document details:', error)
         // Handle error (e.g., show error message to user)
@@ -245,6 +263,8 @@ export default defineComponent({
     return {
       contentUrl,
       documentUploadId,
+      fileName,
+      documentTitle,
       currentTab,
       tabs,
       currentTabComponent,
@@ -255,7 +275,8 @@ export default defineComponent({
       startDragging,
       fetchDocumentDetails,
       fileType,
-      handleTextSelection
+      handleTextSelection,
+      safeDocumentId
     }
   }
 })

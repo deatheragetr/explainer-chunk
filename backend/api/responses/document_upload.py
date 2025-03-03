@@ -20,6 +20,8 @@ class DocumentUploadResponse(BaseModel):
         str, "URL friendly version of file_name (no spaces, non-ASCII chars, etc.)"
     ]
     note: Annotated[Optional[NoteResponse], "End User notes on the document"]
+    custom_title: Annotated[Optional[str], "User-defined custom title for the document"]
+    title: Annotated[str, "Display title based on precedence rules"]
 
 
 class DocumentRetrieveResponseForPage(DocumentUploadResponse):

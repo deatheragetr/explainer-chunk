@@ -4,6 +4,7 @@ import { parallelLimit } from '@/utils/parallelLimit'
 import type { ImportProgress, ExtractionResult } from '@/types'
 import { extractTextFromFile } from '@/utils/textExtract'
 import { createProgressUpdater } from '@/utils/progressUpdater'
+import api from '@/api/axios'
 
 const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks, minimum chunk size S3 allows
 const MAX_RETRIES = 3
@@ -153,7 +154,7 @@ export async function uploadLargeFile(
 
   updateProgress('finalizing', 70)
 
-  const results = await axios.post('http://localhost:8000/document-uploads/', {
+  const results = await api.post('/document-uploads/', {
     file_name: file.name,
     file_type: fileType,
     file_key: fileKey,
