@@ -37,6 +37,7 @@ async def capture_non_html(
     document_upload_id: str,
     normalized_file_type: str,
     logger: Logger,
+    user_id: str,
 ) -> Dict[str, str]:
     try:
         await progress_updater.update(50)
@@ -87,13 +88,18 @@ async def capture_non_html(
             content, normalized_file_type
         )
 
-        document = MongoDocumentUpload(
-            _id=ObjectId(document_upload_id),
-            file_details=mongo_file_details,
-            extracted_metadata=extracted_metadata,
-            extracted_text=extracted_text,
-            openai_assistants=[],
-        )
+        document: MongoDocumentUpload = {
+            "_id": ObjectId(document_upload_id),
+            "user_id": ObjectId(user_id),
+            "file_details": mongo_file_details,
+            "extracted_metadata": extracted_metadata,
+            "extracted_text": extracted_text,
+            "openai_assistants": [],
+            "chats": [],
+            "custom_title": None,
+            "thumbnail": None,
+            "note": None,
+        }
 
         # TODO: Grab default model config for user
         openai_assistant_service = OpenAIAssistantService(

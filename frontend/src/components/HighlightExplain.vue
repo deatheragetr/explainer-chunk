@@ -49,7 +49,7 @@
 
     <!-- Action Button -->
     <button
-      @click="explainHighlight"
+      @click="explainText"
       :disabled="!selectedText || isLoading"
       class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-lg font-bold text-lg transition duration-300 ease-in-out transform hover:from-blue-600 hover:to-indigo-700 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
     >
@@ -128,7 +128,8 @@
 
 <script lang="ts">
 import { defineComponent, ref, inject, watch, computed } from 'vue'
-import axios from 'axios'
+import { useToast } from 'vue-toastification'
+import api from '@/api/axios'
 import ModelSelector from './ModelSelector.vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -141,7 +142,8 @@ export default defineComponent({
   props: {
     documentUploadId: {
       type: String,
-      required: true
+      required: false,
+      default: null
     }
   },
   setup(props) {
@@ -184,6 +186,12 @@ export default defineComponent({
     })
 
     const connectWebSocket = () => {
+      if (!props.documentUploadId) {
+        console.error('Cannot connect WebSocket: documentUploadId is null')
+        handleError('Document ID is missing. Please try again.')
+        return
+      }
+
       socket = new WebSocket(
         `ws://localhost:8000/ws/document-upload/${props.documentUploadId}/text-explanation`
       )
@@ -223,26 +231,33 @@ export default defineComponent({
       }
     }
 
-    const explainHighlight = async () => {
-      if (selectedText.value) {
-        isLoading.value = true
-        explanation.value = ''
-        error.value = ''
-        reconnectAttempts = 0
+    const explainText = async () => {
+      if (!selectedText.value.trim()) {
+        error.value = 'Please select text to explain'
+        return
+      }
 
-        try {
+      if (!props.documentUploadId) {
+        error.value = 'Document ID is missing. Cannot explain text.'
+        return
+      }
+
+      isLoading.value = true
+      error.value = ''
+      explanation.value = ''
+
+      try {
+        // Ensure WebSocket is connected
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
           connectWebSocket()
-
-          await axios.post(
-            `http://localhost:8000/documents/${props.documentUploadId}/explanation`,
-            {
-              highlighted_text: selectedText.value,
-              model: selectedModel.value
-            }
-          )
-        } catch (error) {
-          handleError('Error generating explanation. Please try again.')
         }
+
+        await api.post(`/documents/${props.documentUploadId}/explanation`, {
+          highlighted_text: selectedText.value,
+          model: selectedModel.value
+        })
+      } catch (err) {
+        handleError('Failed to explain text. Please try again.')
       }
     }
 
@@ -285,7 +300,7 @@ export default defineComponent({
       explanation,
       formattedExplanation,
       isLoading,
-      explainHighlight,
+      explainText,
       selectedModel,
       error,
       copyExplanation,

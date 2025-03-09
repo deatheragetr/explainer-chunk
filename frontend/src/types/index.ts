@@ -31,4 +31,9 @@ export interface DocumentUploadData {
 export interface DocumentDetails {
   presigned_url: string
   file_type: string
+  file_name: string
+  url_friendly_file_name: string
+  custom_title?: string
+  title: string
+  id: string
 }

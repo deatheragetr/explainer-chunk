@@ -1,4 +1,15 @@
-from typing import TypedDict, Annotated, Literal, Optional, Union, Dict, Any, List
+from typing import (
+    TypedDict,
+    Annotated,
+    Literal,
+    Optional,
+    Union,
+    Dict,
+    Any,
+    List,
+    cast,
+    Mapping,
+)
 from api.utils.url_friendly import make_url_friendly
 from bson import ObjectId
 from enum import Enum
@@ -78,6 +89,7 @@ class Note(TypedDict):
 
 class MongoDocumentUpload(TypedDict):
     _id: Annotated[ObjectId, "MongoDB ObjectId"]
+    user_id: Annotated[ObjectId, "ID of the user who owns this document"]
     file_details: Annotated[MongoFileDetails, "Details of the uploaded file"]
     extracted_text: Annotated[str, "Extracted text content from the document"]
     extracted_metadata: Optional[
@@ -85,6 +97,7 @@ class MongoDocumentUpload(TypedDict):
             Dict[str, Any], "Extracted metadata (e.g., author, title) from the document"
         ]
     ]
+    custom_title: Optional[Annotated[str, "User-defined custom title for the document"]]
     openai_assistants: Annotated[
         List[OpenAIAssistantDetails], "List of associated OpenAI Assistants"
     ]
@@ -146,3 +159,31 @@ def find_assistant_by_model(document: MongoDocumentUpload, target_model: ModelNa
         if assistant.get("model") == target_model:
             return assistant
     return None
+
+
+def get_display_title(document: Mapping[str, Any]) -> str:
+    """
+    Determine the display title for a document based on precedence rules:
+    1. Custom title if exists
+    2. Extracted metadata title if exists
+    3. Extracted metadata /Title (capital slash T) if exists
+    4. Fallback to file name
+    """
+    # 1. Custom title if exists
+    if document.get("custom_title"):
+        return cast(str, document.get("custom_title"))
+
+    # 2. Extracted metadata title if exists
+    if document.get("extracted_metadata") and document.get(
+        "extracted_metadata", {}
+    ).get("title"):
+        return cast(str, document.get("extracted_metadata", {}).get("title"))
+
+    # 3. Extracted metadata Title (capital T) if exists
+    if document.get("extracted_metadata") and document.get(
+        "extracted_metadata", {}
+    ).get("/Title"):
+        return cast(str, document.get("extracted_metadata", {}).get("/Title"))
+
+    # 4. Fallback to file name
+    return document["file_details"]["file_name"]

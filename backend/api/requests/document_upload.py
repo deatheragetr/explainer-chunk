@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Annotated, Dict, Any
+from typing import Annotated, Dict, Any, Optional
 import re
 from bson import ObjectId
 
@@ -41,3 +41,16 @@ class DocumentUploadRequest(BaseModel):
 
 class NoteRequest(BaseModel):
     content: Annotated[str, "Content of the note"]
+
+
+class CustomTitleRequest(BaseModel):
+    title: Annotated[str, "Custom title for the document"]
+
+
+class DocumentUpdateRequest(BaseModel):
+    """Request model for updating document properties"""
+
+    custom_title: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {"example": {"custom_title": "My Custom Document Title"}}
