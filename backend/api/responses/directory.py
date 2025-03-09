@@ -1,6 +1,5 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from api.responses.document_upload import DocumentRetrieveResponseForPage
 
 
 class DirectoryResponse(BaseModel):
@@ -15,13 +14,23 @@ class DirectoryResponse(BaseModel):
     updated_at: str = Field(..., description="Last update timestamp")
 
 
+class LightweightDocumentResponse(BaseModel):
+    """Minimal document representation for directory listings"""
+
+    id: str = Field(..., description="Document ID")
+    file_name: str = Field(..., description="Original file name")
+    file_type: str = Field(..., description="MIME type of file")
+    url_friendly_file_name: str = Field(..., description="URL friendly file name")
+    title: str = Field(..., description="Display title")
+
+
 class DirectoryContentsResponse(BaseModel):
     """Response model for directory contents"""
 
     directories: List[DirectoryResponse] = Field(
         [], description="List of subdirectories"
     )
-    documents: List[DocumentRetrieveResponseForPage] = Field(
+    documents: List[LightweightDocumentResponse] = Field(
         [], description="List of documents in the directory"
     )
 

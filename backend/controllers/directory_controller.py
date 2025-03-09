@@ -1,24 +1,19 @@
 from datetime import datetime, UTC
-from typing import Optional, Dict, Any, cast, List
+from typing import List, Optional, Dict, Any, cast
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
-
-from config.mongo import get_db, TypedAsyncIOMotorDatabase
-from motor.motor_asyncio import AsyncIOMotorCollection
-from api.utils.auth_helper import get_current_user
+from fastapi import APIRouter, HTTPException, Depends, Query, Body, status
 from db.models.directory import MongoDirectory, create_directory_path
 from db.models.document_uploads import MongoDocumentUpload, get_display_title
-from db.models.user import MongoUser
 from api.responses.directory import (
     DirectoryResponse,
     DirectoryContentsResponse,
     DirectoryListResponse,
+    LightweightDocumentResponse,
 )
-from api.responses.document_upload import (
-    DocumentRetrieveResponseForPage,
-    DocumentUploadResponse,
-    ThumbnailInfo,
-)
+from config.mongo import get_db, TypedAsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorCollection
+from api.utils.auth_helper import get_current_user
+from db.models.user import MongoUser
 
 router = APIRouter()
 
@@ -736,32 +731,16 @@ async def get_directory_contents(
     )
 
     # Convert documents to response format
-    document_responses: List[DocumentRetrieveResponseForPage] = []
+    document_responses: List[LightweightDocumentResponse] = []
     for document in documents:
-        # Create base response with required fields
-        doc_response = DocumentRetrieveResponseForPage(
+        # Create lightweight document response
+        doc_response = LightweightDocumentResponse(
             id=str(document["_id"]),
             file_name=document["file_details"]["file_name"],
             file_type=document["file_details"]["file_type"],
             url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
-            custom_title=document.get("custom_title"),
             title=get_display_title(document),
-            note=None,
-            thumbnail=None,
-            extracted_metadata=None,
-            directory_path=(
-                document["directory_path"] if document.get("directory_path") else None
-            ),
-            directory_id=(
-                str(document["directory_id"]) if document.get("directory_id") else None
-            ),
         )
-
-        # Add thumbnail if available
-        thumbnail = document.get("thumbnail")
-        if thumbnail and "s3_url" in thumbnail:
-            doc_response.thumbnail = ThumbnailInfo(presigned_url=thumbnail["s3_url"])
-
         document_responses.append(doc_response)
 
     return DirectoryContentsResponse(
