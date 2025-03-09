@@ -170,7 +170,8 @@ const createDirectory = async () => {
       <div
         class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
         :class="{ 'bg-indigo-100': currentDirectoryId === null, 'justify-center': collapsed }"
-        @click="navigateToRoot"
+        @click="() => {}"
+        @dblclick="navigateToRoot"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -192,7 +193,7 @@ const createDirectory = async () => {
           v-for="doc in directoryDocuments.get(null) || []"
           :key="doc.id"
           class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-          @click="navigateToDocument(doc)"
+          @dblclick="navigateToDocument(doc)"
         >
           <!-- File type icon -->
           <svg
@@ -222,7 +223,8 @@ const createDirectory = async () => {
               'bg-indigo-100': currentDirectoryId === node._id,
               'justify-center': collapsed
             }"
-            @click="navigateToDirectory(node._id)"
+            @click="toggleExpand(node, $event)"
+            @dblclick="navigateToDirectory(node._id)"
           >
             <button
               v-if="
@@ -300,7 +302,7 @@ const createDirectory = async () => {
               v-for="doc in directoryDocuments.get(node._id) || []"
               :key="doc.id"
               class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-              @click.stop="navigateToDocument(doc)"
+              @dblclick.stop="navigateToDocument(doc)"
             >
               <!-- File type icon -->
               <svg
@@ -323,7 +325,8 @@ const createDirectory = async () => {
               <div
                 class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
                 :class="{ 'bg-indigo-100': currentDirectoryId === childNode._id }"
-                @click.stop="navigateToDirectory(childNode._id)"
+                @click.stop="toggleExpand(childNode, $event)"
+                @dblclick.stop="navigateToDirectory(childNode._id)"
               >
                 <button
                   v-if="
@@ -397,7 +400,7 @@ const createDirectory = async () => {
                   v-for="doc in directoryDocuments.get(childNode._id) || []"
                   :key="doc.id"
                   class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-                  @click.stop="navigateToDocument(doc)"
+                  @dblclick.stop="navigateToDocument(doc)"
                 >
                   <!-- File type icon -->
                   <svg
@@ -422,7 +425,8 @@ const createDirectory = async () => {
                     :key="grandchildNode._id"
                     class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
                     :class="{ 'bg-indigo-100': currentDirectoryId === grandchildNode._id }"
-                    @click.stop="navigateToDirectory(grandchildNode._id)"
+                    @click.stop="toggleExpand(grandchildNode, $event)"
+                    @dblclick.stop="navigateToDirectory(grandchildNode._id)"
                   >
                     <span class="w-4"></span>
                     <svg
