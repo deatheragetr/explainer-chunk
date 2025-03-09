@@ -1,5 +1,6 @@
 export interface Directory {
   _id: string
+  id?: string // Add optional id field to handle API responses
   user_id: string
   name: string
   parent_id: string | null

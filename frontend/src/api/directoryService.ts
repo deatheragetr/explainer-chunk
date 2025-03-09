@@ -15,7 +15,8 @@ export default {
       params.append('parent_id', parentId)
     }
     const response = await axios.post(`/directories?${params.toString()}`)
-    return response.data
+    const dir = response.data
+    return { ...dir, _id: dir.id || dir._id }
   },
 
   /**
@@ -28,8 +29,26 @@ export default {
     if (parentId) {
       params.append('parent_id', parentId)
     }
-    const response = await axios.get(`/directories?${params.toString()}`)
-    return response.data
+    const url = `/directories?${params.toString()}`
+
+    try {
+      const response = await axios.get(url)
+
+      // The API returns a DirectoryListResponse object with a directories array
+      if (response.data && Array.isArray(response.data.directories)) {
+        // Map the API response to our expected format
+        return response.data.directories.map((dir: any) => ({
+          ...dir,
+          _id: dir.id || dir._id // Ensure _id is set from id if available
+        }))
+      } else {
+        console.error('Unexpected API response format:', response.data)
+        return []
+      }
+    } catch (error) {
+      console.error(`Error fetching directories with parent_id ${parentId}:`, error)
+      return []
+    }
   },
 
   /**
@@ -39,7 +58,8 @@ export default {
    */
   async getDirectory(directoryId: string): Promise<Directory> {
     const response = await axios.get(`/directories/${directoryId}`)
-    return response.data
+    const dir = response.data
+    return { ...dir, _id: dir.id || dir._id }
   },
 
   /**
@@ -49,7 +69,8 @@ export default {
    */
   async getDirectoryByPath(path: string): Promise<Directory> {
     const response = await axios.get(`/directories/path/${path}`)
-    return response.data
+    const dir = response.data
+    return { ...dir, _id: dir.id || dir._id }
   },
 
   /**
@@ -62,7 +83,8 @@ export default {
     const params = new URLSearchParams()
     params.append('name', name)
     const response = await axios.put(`/directories/${directoryId}?${params.toString()}`)
-    return response.data
+    const dir = response.data
+    return { ...dir, _id: dir.id || dir._id }
   },
 
   /**
@@ -93,7 +115,8 @@ export default {
       params.append('new_parent_id', newParentId)
     }
     const response = await axios.post(`/directories/${directoryId}/move?${params.toString()}`)
-    return response.data
+    const dir = response.data
+    return { ...dir, _id: dir.id || dir._id }
   },
 
   /**
@@ -104,7 +127,17 @@ export default {
   async getDirectoryContents(directoryId: string | null = null): Promise<DirectoryContents> {
     const url = directoryId ? `/directories/${directoryId}/contents` : '/directories/root/contents'
     const response = await axios.get(url)
-    return response.data
+
+    // Map directories to ensure they have _id
+    const contents = response.data
+    if (contents && Array.isArray(contents.directories)) {
+      contents.directories = contents.directories.map((dir: any) => ({
+        ...dir,
+        _id: dir.id || dir._id
+      }))
+    }
+
+    return contents
   },
 
   /**
@@ -123,11 +156,13 @@ export default {
   },
 
   /**
-   * Get all directories (flat list)
-   * @returns List of all directories
+   * Get all root directories (directories with no parent)
+   * Note: This does not return all directories in the system, only the root level ones.
+   * To get a complete directory tree, you need to recursively fetch children.
+   * @returns List of root directories
    */
   async getAllDirectories(): Promise<Directory[]> {
-    const response = await axios.get('/directories/all')
-    return response.data
+    // This returns only root directories (where parent_id is null)
+    return this.getDirectories(null)
   }
 }

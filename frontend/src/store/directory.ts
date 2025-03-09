@@ -37,11 +37,53 @@ export const useDirectoryStore = defineStore('directory', {
       this.isLoading = true
       this.error = null
       try {
-        this.directories = await directoryService.getDirectories()
+        // Get all root directories
+        const rootDirectories = await directoryService.getDirectories(null)
+
+        if (!Array.isArray(rootDirectories)) {
+          console.error('Expected rootDirectories to be an array, got:', rootDirectories)
+          this.directories = []
+          this.directoryTree = []
+          return
+        }
+
+        // Start with root directories
+        this.directories = [...rootDirectories]
+
+        // Instead of recursion, we'll use a queue-based approach
+        const directoryQueue = [...rootDirectories]
+        const processedIds = new Set(rootDirectories.map((dir) => dir._id))
+
+        // Process each directory in the queue
+        while (directoryQueue.length > 0) {
+          const currentDir = directoryQueue.shift()
+          if (!currentDir) continue
+
+          // Get children of this directory
+          const children = await directoryService.getDirectories(currentDir._id)
+
+          if (!Array.isArray(children)) {
+            console.error(`Expected children to be an array, got:`, children)
+            continue
+          }
+
+          // Add new children to our directories array and queue
+          for (const child of children) {
+            if (child._id && !processedIds.has(child._id)) {
+              this.directories.push(child)
+              directoryQueue.push(child)
+              processedIds.add(child._id)
+            }
+          }
+        }
+
+        // Build the directory tree
         this.directoryTree = buildDirectoryTree(this.directories)
       } catch (error: any) {
         this.error = error.message || 'Failed to fetch directories'
         console.error('Error fetching directories:', error)
+        this.directories = []
+        this.directoryTree = []
       } finally {
         this.isLoading = false
       }
@@ -188,8 +230,8 @@ export const useDirectoryStore = defineStore('directory', {
 
         // Refresh contents if we're in the old or new parent directory
         if (
-          this.currentDirectory?._id === oldParentId ||
-          this.currentDirectory?._id === newParentId
+          this.currentDirectory &&
+          (this.currentDirectory._id === directoryId || this.currentDirectory._id === newParentId)
         ) {
           await this.fetchDirectoryContents(this.currentDirectory._id)
         }
