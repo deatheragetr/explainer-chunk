@@ -21,6 +21,9 @@ const directoryContents = computed(() => directoryStore.directoryContents)
 // Track documents for each directory
 const directoryDocuments = ref<Map<string | null, LightweightDocument[]>>(new Map())
 
+// Track if root directory is expanded
+const isRootExpanded = ref(true)
+
 // Update directoryDocuments when directoryContents changes
 watch(
   directoryContents,
@@ -147,6 +150,12 @@ const createDirectory = async () => {
     }
   }
 }
+
+// Toggle root directory expanded state
+const toggleRootExpand = (event: Event) => {
+  event.stopPropagation()
+  isRootExpanded.value = !isRootExpanded.value
+}
 </script>
 
 <template>
@@ -175,11 +184,44 @@ const createDirectory = async () => {
 
     <div class="mb-2">
       <div
-        class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+        class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
         :class="{ 'bg-indigo-100': currentDirectoryId === null, 'justify-center': collapsed }"
-        @click="() => {}"
+        @click="toggleRootExpand"
         @dblclick="navigateToRoot"
       >
+        <button
+          v-if="!collapsed && (directoryDocuments.get(null)?.length ?? 0) > 0"
+          @click.stop="toggleRootExpand($event)"
+          class="mr-1 text-gray-500 focus:outline-none"
+        >
+          <svg
+            v-if="!isRootExpanded"
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-3 w-3"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          <svg
+            v-else
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-3 w-3"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+        <span v-else-if="!collapsed" class="w-4"></span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           class="h-5 w-5 text-indigo-600"
@@ -191,11 +233,11 @@ const createDirectory = async () => {
             d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"
           />
         </svg>
-        <span v-if="!collapsed" class="text-gray-700 text-sm">Home</span>
+        <span v-if="!collapsed" class="text-gray-700 text-sm flex-grow">Home</span>
       </div>
 
       <!-- Root level documents -->
-      <div v-if="!collapsed" class="ml-5 mt-1">
+      <div v-if="!collapsed && isRootExpanded" class="ml-5 mt-1">
         <div
           v-for="doc in directoryDocuments.get(null) || []"
           :key="doc.id"
