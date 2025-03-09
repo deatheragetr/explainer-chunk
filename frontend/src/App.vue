@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router'
 import NavBar from '@/components/NavBar.vue'
+import SidebarLayout from '@/components/SidebarLayout.vue'
 import { computed, watch } from 'vue'
 import { useDocumentTitle } from '@/composables/useDocumentTitle'
 
@@ -11,6 +12,12 @@ const showNavBar = computed(() => {
   // Add routes where you don't want to show the navbar
   const routesWithoutNavBar = ['/auth']
   return !routesWithoutNavBar.includes(route.path)
+})
+
+const useSidebar = computed(() => {
+  // Add routes where you want to use the sidebar layout
+  const routesWithSidebar = ['/', '/settings']
+  return routesWithSidebar.some((path) => route.path.startsWith(path))
 })
 
 // Watch for route changes to reset document title when not on a document page
@@ -28,9 +35,16 @@ watch(
 <template>
   <div class="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100">
     <NavBar v-if="showNavBar" />
+
     <div :class="{ 'pt-20': showNavBar }">
-      <!-- Increased padding-top from pt-16 to pt-20 -->
-      <RouterView :key="route.fullPath" />
+      <template v-if="useSidebar">
+        <SidebarLayout>
+          <RouterView :key="route.fullPath" />
+        </SidebarLayout>
+      </template>
+      <template v-else>
+        <RouterView :key="route.fullPath" />
+      </template>
     </div>
   </div>
 </template>

@@ -94,6 +94,23 @@ async def upload_document(
         ):
             raise HTTPException(status_code=404, detail="File not found")
 
+        # Handle directory_id if provided
+        directory_id = None
+        directory_path = None
+        if reqBody.directory_id:
+            # Verify directory exists and belongs to user
+            directory_collection = db.directories
+            directory = await directory_collection.find_one(
+                {
+                    "_id": ObjectId(reqBody.directory_id),
+                    "user_id": ObjectId(current_user["_id"]),
+                }
+            )
+            if not directory:
+                raise HTTPException(status_code=404, detail="Directory not found")
+            directory_id = ObjectId(reqBody.directory_id)
+            directory_path = directory["path"]
+
         # Save to MongoDB
         document = MongoDocumentUpload(
             _id=doc_id,
@@ -113,6 +130,8 @@ async def upload_document(
             chats=[],
             thumbnail=None,
             note=None,
+            directory_id=directory_id,
+            directory_path=directory_path,
         )
 
         # Kick of background job to process document
@@ -392,6 +411,7 @@ async def update_document(
 
     Currently supports:
     - custom_title: Custom title for the document
+    - directory_id: ID of the directory to move the document to
     """
     try:
         obj_id = ObjectId(document_id)
@@ -410,11 +430,28 @@ async def update_document(
         if update_data.custom_title is not None:
             update_dict["custom_title"] = update_data.custom_title
 
+        # Handle directory_id if provided
+        if update_data.directory_id is not None:
+            if update_data.directory_id == "":
+                # Move to root (no directory)
+                update_dict["directory_id"] = None
+                update_dict["directory_path"] = None
+            else:
+                # Verify directory exists and belongs to user
+                directory_collection = db.directories
+                directory = await directory_collection.find_one(
+                    {"_id": ObjectId(update_data.directory_id), "user_id": user_id}
+                )
+                if not directory:
+                    raise HTTPException(status_code=404, detail="Directory not found")
+                update_dict["directory_id"] = ObjectId(update_data.directory_id)
+                update_dict["directory_path"] = directory.get("path")
+
         # If no fields to update, return 400
         if not update_dict:
             raise HTTPException(
                 status_code=400,
-                detail="No valid fields to update. Supported fields: custom_title",
+                detail="No valid fields to update. Supported fields: custom_title, directory_id",
             )
 
         # Update document

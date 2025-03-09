@@ -1,8 +1,102 @@
 <template>
   <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-7xl mx-auto">
+      <div class="mb-6">
+        <!-- Directory Breadcrumb -->
+        <DirectoryBreadcrumb />
+      </div>
+
+      <div class="mb-8 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-gray-800">
+          {{ currentDirectory ? currentDirectory.name : 'My Documents' }}
+        </h1>
+        <div class="flex space-x-4">
+          <button
+            @click="showCreateDirModal = true"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5 mr-2"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            New Folder
+          </button>
+          <DocumentUploadModal @document-loaded="handleDocumentLoaded">
+            <template #default="{ openModal }">
+              <button
+                @click="openModal"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                <svg
+                  class="h-5 w-5 mr-2"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                Upload Document
+              </button>
+            </template>
+          </DocumentUploadModal>
+        </div>
+      </div>
+
+      <!-- Directories Section -->
+      <div v-if="directoryContents && directoryContents.directories.length > 0" class="mb-8">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Folders</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div
+            v-for="dir in directoryContents.directories"
+            :key="dir._id"
+            @click="navigateToDirectory(dir._id)"
+            class="bg-white rounded-lg shadow-md overflow-hidden transform transition duration-300 ease-in-out hover:scale-105 cursor-pointer group"
+          >
+            <div class="p-4 flex items-center">
+              <div class="bg-indigo-100 rounded-lg p-3 mr-4">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-8 w-8 text-indigo-600"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                </svg>
+              </div>
+              <div>
+                <h3
+                  class="text-lg font-semibold text-gray-800 group-hover:text-indigo-600 transition-colors"
+                >
+                  {{ dir.name }}
+                </h3>
+                <p class="text-sm text-gray-500">Folder</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Empty state -->
-      <div v-if="documents.length === 0 && !loading" class="text-center">
+      <div
+        v-if="
+          !loading &&
+          (!documents || documents.length === 0) &&
+          (!directoryContents || directoryContents.directories.length === 0)
+        "
+        class="text-center"
+      >
         <div class="bg-white rounded-lg shadow-xl p-8 max-w-2xl mx-auto">
           <svg
             class="mx-auto h-24 w-24 text-indigo-400"
@@ -17,11 +111,29 @@
               d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             />
           </svg>
-          <h2 class="mt-6 text-3xl font-extrabold text-gray-900">No documents yet</h2>
+          <h2 class="mt-6 text-3xl font-extrabold text-gray-900">No content yet</h2>
           <p class="mt-2 text-lg text-gray-600">
-            Get started by uploading your first document or importing text from a website.
+            Get started by creating a folder or uploading your first document.
           </p>
-          <div class="mt-8">
+          <div class="mt-8 flex justify-center space-x-4">
+            <button
+              @click="showCreateDirModal = true"
+              class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5 mr-2"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              Create Folder
+            </button>
             <DocumentUploadModal @document-loaded="handleDocumentLoaded">
               <template #default="{ openModal }">
                 <button
@@ -47,7 +159,10 @@
           </div>
         </div>
       </div>
-      <div v-else>
+
+      <!-- Documents Section -->
+      <div v-if="documents && documents.length > 0">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Documents</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <div v-for="doc in documents" :key="doc.id" class="group">
             <router-link
@@ -99,7 +214,7 @@
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
       </div>
 
-      <div v-if="hasMore && documents.length > 0" class="flex justify-center mt-8">
+      <div v-if="hasMore && documents && documents.length > 0" class="flex justify-center mt-8">
         <button
           @click="loadMore"
           class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50"
@@ -108,14 +223,53 @@
         </button>
       </div>
     </div>
+
+    <!-- Create Directory Modal -->
+    <div
+      v-if="showCreateDirModal"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    >
+      <div class="bg-white rounded-lg p-6 w-96 shadow-xl">
+        <h3 class="text-lg font-semibold mb-4">Create New Folder</h3>
+        <div class="mb-4">
+          <label class="block text-gray-700 text-sm font-medium mb-2" for="dirName">
+            Folder Name
+          </label>
+          <input
+            id="dirName"
+            v-model="newDirName"
+            type="text"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Enter folder name"
+            @keyup.enter="createDirectory"
+          />
+        </div>
+        <div class="flex justify-end space-x-3">
+          <button
+            @click="showCreateDirModal = false"
+            class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none"
+          >
+            Cancel
+          </button>
+          <button
+            @click="createDirectory"
+            class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none"
+            :disabled="!newDirName.trim()"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
-// The script section remains unchanged
-import { defineComponent, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { defineComponent, ref, onMounted, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import DocumentUploadModal from '@/components/DocumentUploadModal.vue'
+import DirectoryBreadcrumb from '@/components/DirectoryBreadcrumb.vue'
+import { useDirectoryStore } from '@/store/directory'
 import api from '@/api/axios'
 
 interface Document {
@@ -133,7 +287,8 @@ interface Document {
 export default defineComponent({
   name: 'HomeView',
   components: {
-    DocumentUploadModal
+    DocumentUploadModal,
+    DirectoryBreadcrumb
   },
   setup() {
     const documents = ref<Document[]>([])
@@ -141,20 +296,34 @@ export default defineComponent({
     const hasMore = ref(true)
     const nextCursor = ref<string | null>(null)
     const router = useRouter()
+    const route = useRoute()
+    const directoryStore = useDirectoryStore()
+
+    // Directory state
+    const showCreateDirModal = ref(false)
+    const newDirName = ref('')
+
+    const currentDirectory = computed(() => directoryStore.currentDirectory)
+    const directoryContents = computed(() => directoryStore.directoryContents)
 
     const fetchDocuments = async () => {
       if (loading.value) return
 
       loading.value = true
       try {
-        const response = await api.get('/document-uploads', {
-          params: {
-            before: nextCursor.value,
-            limit: 12
-          }
-        })
+        const params: any = {
+          before: nextCursor.value,
+          limit: 12
+        }
 
-        documents.value.push(...response.data.documents)
+        // Add directory_id if we're in a directory
+        if (currentDirectory.value) {
+          params.directory_id = currentDirectory.value._id
+        }
+
+        const response = await api.get('/document-uploads', { params })
+
+        documents.value = response.data.documents
         nextCursor.value = response.data.next_cursor
         hasMore.value = !!response.data.next_cursor
       } catch (error) {
@@ -167,6 +336,7 @@ export default defineComponent({
     const loadMore = () => {
       fetchDocuments()
     }
+
     const handleDocumentLoaded = (documentData: any) => {
       const documentUploadId = documentData.id || documentData.document_upload_id
       const newPath = `/uploads/${documentUploadId}/${documentData.url_friendly_file_name}/read`
@@ -195,7 +365,35 @@ export default defineComponent({
       return fileType.split('/').pop()?.toUpperCase() || fileType
     }
 
-    onMounted(() => {
+    const navigateToDirectory = (directoryId: string) => {
+      directoryStore.navigateToDirectory(directoryId)
+    }
+
+    const createDirectory = async () => {
+      if (newDirName.value.trim()) {
+        try {
+          const parentId = currentDirectory.value?._id || null
+          await directoryStore.createDirectory(newDirName.value, parentId)
+          showCreateDirModal.value = false
+          newDirName.value = ''
+        } catch (error: any) {
+          console.error('Failed to create directory:', error)
+        }
+      }
+    }
+
+    // Watch for changes in the current directory and reload documents
+    watch(
+      () => directoryStore.currentDirectory,
+      () => {
+        nextCursor.value = null
+        fetchDocuments()
+      }
+    )
+
+    onMounted(async () => {
+      await directoryStore.fetchAllDirectories()
+      await directoryStore.navigateToDirectory(null)
       fetchDocuments()
     })
 
@@ -205,7 +403,13 @@ export default defineComponent({
       hasMore,
       loadMore,
       formatFileType,
-      handleDocumentLoaded
+      handleDocumentLoaded,
+      currentDirectory,
+      directoryContents,
+      navigateToDirectory,
+      showCreateDirModal,
+      newDirName,
+      createDirectory
     }
   }
 })
