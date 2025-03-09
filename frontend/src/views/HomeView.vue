@@ -89,14 +89,7 @@
       </div>
 
       <!-- Empty state -->
-      <div
-        v-if="
-          !loading &&
-          (!documents || documents.length === 0) &&
-          (!directoryContents || directoryContents.directories.length === 0)
-        "
-        class="text-center"
-      >
+      <div v-if="isEmptyState" class="text-center">
         <div class="bg-white rounded-lg shadow-xl p-8 max-w-2xl mx-auto">
           <svg
             class="mx-auto h-24 w-24 text-indigo-400"
@@ -214,6 +207,7 @@
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
       </div>
 
+      <!-- Load More button -->
       <div v-if="hasMore && documents && documents.length > 0" class="flex justify-center mt-8">
         <button
           @click="loadMore"
@@ -293,7 +287,7 @@ export default defineComponent({
   setup() {
     const documents = ref<Document[]>([])
     const loading = ref(false)
-    const hasMore = ref(true)
+    const hasMore = ref(false)
     const nextCursor = ref<string | null>(null)
     const router = useRouter()
     const route = useRoute()
@@ -306,6 +300,22 @@ export default defineComponent({
     const currentDirectory = computed(() => directoryStore.currentDirectory)
     const directoryContents = computed(() => directoryStore.directoryContents)
 
+    // Debug computed property to help diagnose empty state issues
+    const isEmptyState = computed(() => {
+      const hasDirectories = !!directoryContents.value?.directories?.length
+      const hasDocuments = !!documents.value?.length
+      const isEmpty = !loading.value && !hasDirectories && !hasDocuments
+
+      console.log('Empty state check:', {
+        loading: loading.value,
+        hasDirectories,
+        hasDocuments,
+        isEmpty
+      })
+
+      return isEmpty
+    })
+
     const fetchDocuments = async () => {
       if (loading.value) return
 
@@ -316,14 +326,27 @@ export default defineComponent({
           limit: 12
         }
 
-        // Add directory_id if we're in a directory
+        // Always explicitly set directory_id parameter
         if (currentDirectory.value) {
+          // For a specific directory
           params.directory_id = currentDirectory.value._id
+        } else {
+          // For root directory, use empty string
+          params.directory_id = ''
         }
+
+        console.log('Fetching documents with params:', params)
 
         const response = await api.get('/document-uploads', { params })
 
-        documents.value = response.data.documents
+        if (nextCursor.value) {
+          // Append to existing documents if we're paginating
+          documents.value = [...documents.value, ...response.data.documents]
+        } else {
+          // Replace documents if this is the first load
+          documents.value = response.data.documents
+        }
+
         nextCursor.value = response.data.next_cursor
         hasMore.value = !!response.data.next_cursor
       } catch (error) {
@@ -385,16 +408,42 @@ export default defineComponent({
     // Watch for changes in the current directory and reload documents
     watch(
       () => directoryStore.currentDirectory,
-      () => {
+      (newDirectory) => {
+        console.log('Directory changed:', newDirectory ? newDirectory.name : 'Root')
+        // Reset pagination and fetch documents for the new directory
         nextCursor.value = null
         fetchDocuments()
       }
     )
 
     onMounted(async () => {
-      await directoryStore.fetchAllDirectories()
-      await directoryStore.navigateToDirectory(null)
-      fetchDocuments()
+      loading.value = true
+      try {
+        // First, fetch all directories
+        await directoryStore.fetchAllDirectories()
+
+        // Then navigate to the root directory (or the one from the URL if implemented)
+        await directoryStore.navigateToDirectory(null)
+
+        // Ensure directory navigation is complete before fetching documents
+        // This is important for hard refreshes
+        nextCursor.value = null
+
+        // Make sure we're explicitly setting the directory_id parameter for root
+        const params: any = {
+          limit: 12,
+          directory_id: '' // Empty string for root directory
+        }
+
+        const response = await api.get('/document-uploads', { params })
+        documents.value = response.data.documents
+        nextCursor.value = response.data.next_cursor
+        hasMore.value = !!response.data.next_cursor
+      } catch (error) {
+        console.error('Error initializing view:', error)
+      } finally {
+        loading.value = false
+      }
     })
 
     return {
@@ -409,7 +458,8 @@ export default defineComponent({
       navigateToDirectory,
       showCreateDirModal,
       newDirName,
-      createDirectory
+      createDirectory,
+      isEmptyState
     }
   }
 })

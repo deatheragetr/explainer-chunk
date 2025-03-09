@@ -340,18 +340,13 @@ export default defineComponent({
         }
 
         // Use the standard concurrency parameter (4 is the default)
-        const response = await uploadLargeFile(file, fileType, importProgress)
-
-        // After upload is complete, update the document with the directory if needed
-        if (selectedDirectoryId.value && response && response.id) {
-          try {
-            await api.patch(`/document-uploads/${response.id}`, {
-              directory_id: selectedDirectoryId.value
-            })
-          } catch (dirError) {
-            console.error('Error setting directory:', dirError)
-          }
-        }
+        const response = await uploadLargeFile(
+          file,
+          fileType,
+          importProgress,
+          4,
+          selectedDirectoryId.value
+        )
 
         importProgress.value = { status: 'Complete', progress: 100, payload: response }
         const emitBody = { ...response, file: file }
@@ -375,16 +370,33 @@ export default defineComponent({
           isLoading.value = true
           error.value = ''
           importProgress.value = { status: 'Capturing website', progress: 0, payload: {} }
+
+          // Create request body with directory_id if selected
+          const importRequestBody: any = {}
+          if (selectedDirectoryId.value) {
+            importRequestBody.directory_id = selectedDirectoryId.value
+          }
+
           const importDocRes = await api.post<ImportDocumentUploadResponse>(
             '/document-uploads/imports',
-            {}
+            importRequestBody
           )
           connectWebSocket(importDocRes.data.id)
 
-          const captureRes = await api.post<WebsiteCaptureResponse>('/capture-website/', {
+          // Create capture request body with directory_id if selected
+          const captureRequestBody: any = {
             url: url.value,
             document_upload_id: importDocRes.data.id
-          })
+          }
+
+          if (selectedDirectoryId.value) {
+            captureRequestBody.directory_id = selectedDirectoryId.value
+          }
+
+          const captureRes = await api.post<WebsiteCaptureResponse>(
+            '/capture-website/',
+            captureRequestBody
+          )
 
           importProgress.value = { status: 'Complete', progress: 100, payload: captureRes.data }
           // emit('document-loaded', captureRes.data) // TODO: Confirm we even need this?

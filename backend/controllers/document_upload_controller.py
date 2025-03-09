@@ -1,6 +1,6 @@
 import traceback
 from fastapi import APIRouter, HTTPException, Body, Depends, Query
-from typing import Optional, List, Any, Union
+from typing import Optional, List, Any, Union, Dict
 from bson import ObjectId
 from db.models.document_uploads import (
     MongoDocumentUpload,
@@ -49,10 +49,31 @@ router = APIRouter()
 @router.post(
     "/document-uploads/imports", response_model=DocumentUploadImportExternalResponse
 )
-async def upload_document_from_import():
+async def upload_document_from_import(
+    request: Optional[Dict[str, Any]] = Body(None),
+    current_user: MongoUser = Depends(get_current_user),
+    db: TypedAsyncIOMotorDatabase = Depends(get_db),
+):
     try:
+        # Create a new document ID
+        document_id = ObjectId()
+
+        # Handle directory_id if provided
+        if request and "directory_id" in request:
+            directory_id = request["directory_id"]
+            # Verify directory exists and belongs to user
+            directory_collection = db.directories
+            directory = await directory_collection.find_one(
+                {
+                    "_id": ObjectId(directory_id),
+                    "user_id": ObjectId(current_user["_id"]),
+                }
+            )
+            if not directory:
+                raise HTTPException(status_code=404, detail="Directory not found")
+
         # TODO: Push to redis websocket list along with user data
-        return DocumentUploadImportExternalResponse(id=str(ObjectId()))
+        return DocumentUploadImportExternalResponse(id=str(document_id))
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -154,6 +175,12 @@ async def upload_document(
             note=note_to_response(document.get("note")),
             custom_title=document.get("custom_title"),
             title=display_title,
+            directory_id=(
+                str(document["directory_id"]) if document.get("directory_id") else None
+            ),
+            directory_path=(
+                document["directory_path"] if document.get("directory_path") else None
+            ),
         )
     except HTTPException as e:
         raise e
@@ -216,6 +243,12 @@ async def get_document(
             note=note_to_response(document.get("note")),
             custom_title=document.get("custom_title"),
             title=display_title,
+            directory_id=(
+                str(document["directory_id"]) if document.get("directory_id") else None
+            ),
+            directory_path=(
+                document["directory_path"] if document.get("directory_path") else None
+            ),
         )
     except HTTPException as e:
         raise e
@@ -232,6 +265,9 @@ async def get_document(
 async def get_document_uploads(
     before: Optional[str] = Query(None, description="Cursor for pagination"),
     limit: int = Query(10, ge=1, le=100, description="Number of documents to return"),
+    directory_id: Optional[str] = Query(
+        None, description="Filter documents by directory ID"
+    ),
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     current_user: MongoUser = Depends(get_current_user),
 ):
@@ -239,19 +275,33 @@ async def get_document_uploads(
         collection = db.document_uploads
         user_id = ObjectId(current_user["_id"])
 
-        # Construct query based on pagination
+        # Base query with user_id filter
+        base_query = {"user_id": user_id}
+
+        # Add pagination filter if before cursor is provided
         if before:
-            query = {"user_id": user_id, "_id": {"$lt": ObjectId(before)}}
-        else:
-            query = {"user_id": user_id}
+            base_query["_id"] = {"$lt": ObjectId(before)}
+
+        # Add directory filter if directory_id is provided
+        if directory_id:
+            base_query["directory_id"] = ObjectId(directory_id)
+        elif directory_id == "":
+            # Empty string means root directory (no directory_id or directory_id is null)
+            base_query["$or"] = [
+                {"directory_id": None},
+                {"directory_id": {"$exists": False}},
+            ]
 
         cursor = (
             collection.find(
-                query,
+                base_query,
                 {
                     "_id": 1,
                     "file_details": 1,
                     "thumbnail": 1,
+                    "note": 1,
+                    "directory_id": 1,
+                    "directory_path": 1,
                     "extracted_metadata": 1,
                     "custom_title": 1,
                 },
@@ -282,6 +332,12 @@ async def get_document_uploads(
                 note=note_to_response(doc.get("note")),
                 custom_title=doc.get("custom_title"),
                 title=display_title,
+                directory_id=(
+                    str(doc["directory_id"]) if doc.get("directory_id") else None
+                ),
+                directory_path=(
+                    doc["directory_path"] if doc.get("directory_path") else None
+                ),
             )
             response_documents.append(response_doc)
 
@@ -499,6 +555,12 @@ async def update_document(
             note=note_to_response(document.get("note")),
             custom_title=document.get("custom_title"),
             title=display_title,
+            directory_id=(
+                str(document["directory_id"]) if document.get("directory_id") else None
+            ),
+            directory_path=(
+                document["directory_path"] if document.get("directory_path") else None
+            ),
         )
     except HTTPException as e:
         raise e

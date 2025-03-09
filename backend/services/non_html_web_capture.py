@@ -1,5 +1,5 @@
 from urllib.parse import urlparse
-from typing import Dict
+from typing import Dict, Optional
 from logging import Logger
 import os
 from bson import ObjectId
@@ -38,6 +38,7 @@ async def capture_non_html(
     normalized_file_type: str,
     logger: Logger,
     user_id: str,
+    directory_id: Optional[str] = None,
 ) -> Dict[str, str]:
     try:
         await progress_updater.update(50)
@@ -99,7 +100,17 @@ async def capture_non_html(
             "custom_title": None,
             "thumbnail": None,
             "note": None,
+            "directory_id": ObjectId(directory_id) if directory_id else None,
+            "directory_path": None,  # Will be populated if directory_id is provided
         }
+
+        # If directory_id is provided, fetch the directory path
+        if directory_id:
+            directory = await mongo_collection.database.directories.find_one(
+                {"_id": ObjectId(directory_id), "user_id": ObjectId(user_id)}
+            )
+            if directory:
+                document["directory_path"] = directory.get("path")
 
         # TODO: Grab default model config for user
         openai_assistant_service = OpenAIAssistantService(

@@ -736,7 +736,7 @@ async def get_directory_contents(
     )
 
     # Convert documents to response format
-    document_responses: List[DocumentUploadResponse] = []
+    document_responses: List[DocumentRetrieveResponseForPage] = []
     for document in documents:
         # Create base response with required fields
         doc_response = DocumentRetrieveResponseForPage(
@@ -749,6 +749,12 @@ async def get_directory_contents(
             note=None,
             thumbnail=None,
             extracted_metadata=None,
+            directory_path=(
+                document["directory_path"] if document.get("directory_path") else None
+            ),
+            directory_id=(
+                str(document["directory_id"]) if document.get("directory_id") else None
+            ),
         )
 
         # Add thumbnail if available
