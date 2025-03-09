@@ -75,6 +75,7 @@ onMounted(async () => {
 
 const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
   event.stopPropagation()
+  event.preventDefault()
 
   // Toggle the expanded state
   node.isExpanded = !node.isExpanded
@@ -134,6 +135,7 @@ const parentDirectoryId = ref<string | null>(null)
 
 const openCreateModal = (parentId: string | null = null, event: Event) => {
   event.stopPropagation()
+  event.preventDefault()
   parentDirectoryId.value = parentId
   newDirectoryName.value = ''
   showCreateModal.value = true
@@ -154,6 +156,7 @@ const createDirectory = async () => {
 // Toggle root directory expanded state
 const toggleRootExpand = (event: Event) => {
   event.stopPropagation()
+  event.preventDefault()
   isRootExpanded.value = !isRootExpanded.value
 }
 </script>
@@ -163,7 +166,7 @@ const toggleRootExpand = (event: Event) => {
     <div v-if="!collapsed" class="flex justify-between items-center mb-3">
       <h3 class="text-sm font-semibold text-gray-700">Directories</h3>
       <button
-        @click="openCreateModal(null, $event)"
+        @click.stop.prevent="openCreateModal(null, $event)"
         class="text-indigo-600 hover:text-indigo-800 focus:outline-none"
         title="Add root directory"
       >
@@ -186,12 +189,12 @@ const toggleRootExpand = (event: Event) => {
       <div
         class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
         :class="{ 'bg-indigo-100': currentDirectoryId === null, 'justify-center': collapsed }"
-        @click="toggleRootExpand"
-        @dblclick="navigateToRoot"
+        @click.stop="toggleRootExpand"
+        @dblclick.stop="navigateToRoot"
       >
         <button
           v-if="!collapsed && (directoryDocuments.get(null)?.length ?? 0) > 0"
-          @click.stop="toggleRootExpand($event)"
+          @click.stop.prevent="toggleRootExpand($event)"
           class="mr-1 text-gray-500 focus:outline-none"
         >
           <svg
@@ -242,7 +245,8 @@ const toggleRootExpand = (event: Event) => {
           v-for="doc in directoryDocuments.get(null) || []"
           :key="doc.id"
           class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-          @dblclick="navigateToDocument(doc)"
+          @click.stop=""
+          @dblclick.stop="navigateToDocument(doc)"
         >
           <!-- File type icon -->
           <svg
@@ -272,15 +276,15 @@ const toggleRootExpand = (event: Event) => {
               'bg-indigo-100': currentDirectoryId === node._id,
               'justify-center': collapsed
             }"
-            @click="toggleExpand(node, $event)"
-            @dblclick="navigateToDirectory(node._id)"
+            @click.stop="toggleExpand(node, $event)"
+            @dblclick.stop="navigateToDirectory(node._id)"
           >
             <button
               v-if="
                 !collapsed &&
                 (node.children.length > 0 || (directoryDocuments.get(node._id)?.length ?? 0) > 0)
               "
-              @click.stop="toggleExpand(node, $event)"
+              @click.stop.prevent="toggleExpand(node, $event)"
               class="mr-1 text-gray-500 focus:outline-none"
             >
               <svg
@@ -325,7 +329,7 @@ const toggleRootExpand = (event: Event) => {
             }}</span>
             <button
               v-if="!collapsed"
-              @click.stop="openCreateModal(node._id, $event)"
+              @click.stop.prevent="openCreateModal(node._id, $event)"
               class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
               title="Add subdirectory"
             >
@@ -351,6 +355,7 @@ const toggleRootExpand = (event: Event) => {
               v-for="doc in directoryDocuments.get(node._id) || []"
               :key="doc.id"
               class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+              @click.stop=""
               @dblclick.stop="navigateToDocument(doc)"
             >
               <!-- File type icon -->
@@ -382,7 +387,7 @@ const toggleRootExpand = (event: Event) => {
                     childNode.children.length > 0 ||
                     (directoryDocuments.get(childNode._id)?.length ?? 0) > 0
                   "
-                  @click.stop="toggleExpand(childNode, $event)"
+                  @click.stop.prevent="toggleExpand(childNode, $event)"
                   class="mr-1 text-gray-500 focus:outline-none"
                 >
                   <svg
@@ -423,7 +428,7 @@ const toggleRootExpand = (event: Event) => {
                 </svg>
                 <span class="text-gray-700 text-sm truncate flex-grow">{{ childNode.name }}</span>
                 <button
-                  @click.stop="openCreateModal(childNode._id, $event)"
+                  @click.stop.prevent="openCreateModal(childNode._id, $event)"
                   class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Add subdirectory"
                 >
@@ -449,6 +454,7 @@ const toggleRootExpand = (event: Event) => {
                   v-for="doc in directoryDocuments.get(childNode._id) || []"
                   :key="doc.id"
                   class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                  @click.stop=""
                   @dblclick.stop="navigateToDocument(doc)"
                 >
                   <!-- File type icon -->
@@ -482,7 +488,7 @@ const toggleRootExpand = (event: Event) => {
                         grandchildNode.children.length > 0 ||
                         (directoryDocuments.get(grandchildNode._id)?.length ?? 0) > 0
                       "
-                      @click.stop="toggleExpand(grandchildNode, $event)"
+                      @click.stop.prevent="toggleExpand(grandchildNode, $event)"
                       class="mr-1 text-gray-500 focus:outline-none"
                     >
                       <svg
@@ -527,7 +533,7 @@ const toggleRootExpand = (event: Event) => {
                       grandchildNode.name
                     }}</span>
                     <button
-                      @click.stop="openCreateModal(grandchildNode._id, $event)"
+                      @click.stop.prevent="openCreateModal(grandchildNode._id, $event)"
                       class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
                       title="Add subdirectory"
                     >
@@ -558,6 +564,7 @@ const toggleRootExpand = (event: Event) => {
                       v-for="doc in directoryDocuments.get(grandchildNode._id) || []"
                       :key="doc.id"
                       class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                      @click.stop=""
                       @dblclick.stop="navigateToDocument(doc)"
                     >
                       <!-- File type icon -->

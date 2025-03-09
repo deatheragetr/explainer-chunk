@@ -264,7 +264,7 @@ onMounted(() => {
             @dragleave.stop="onDragLeave"
             @drop.stop="onDrop($event, directory._id)"
           >
-            <div class="flex items-center mb-2" @click="navigateToDirectory(directory._id)">
+            <div class="flex items-center mb-2" @dblclick="navigateToDirectory(directory._id)">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 class="h-8 w-8 text-indigo-500 mr-3"
@@ -352,11 +352,11 @@ onMounted(() => {
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           <div
             v-for="document in directoryContents.documents"
-            :key="document._id"
+            :key="document.id"
             class="bg-white rounded-lg shadow-sm p-4 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
             draggable="true"
-            @dragstart="onDragStart($event, 'document', document._id)"
-            @click="navigateToDocument(document._id, document.file_details.file_name)"
+            @dragstart="onDragStart($event, 'document', document.id)"
+            @dblclick="navigateToDocument(document.id, document.file_name)"
           >
             <div class="flex items-center">
               <svg
@@ -373,10 +373,10 @@ onMounted(() => {
               </svg>
               <div class="flex-grow">
                 <div class="text-gray-800 font-medium truncate">
-                  {{ document.custom_title || document.file_details.file_name }}
+                  {{ document.title || document.file_name }}
                 </div>
                 <div class="text-gray-500 text-sm">
-                  {{ document.file_details.file_type.toUpperCase() }}
+                  {{ document.file_type.toUpperCase() }}
                 </div>
               </div>
             </div>

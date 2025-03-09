@@ -61,7 +61,7 @@
           <div
             v-for="dir in directoryContents.directories"
             :key="dir._id"
-            @click="navigateToDirectory(dir._id)"
+            @dblclick="navigateToDirectory(dir._id)"
             class="bg-white rounded-lg shadow-md overflow-hidden transform transition duration-300 ease-in-out hover:scale-105 cursor-pointer group"
           >
             <div class="p-4 flex items-center">
@@ -158,10 +158,7 @@
         <h2 class="text-lg font-semibold text-gray-700 mb-4">Documents</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <div v-for="doc in documents" :key="doc.id" class="group">
-            <router-link
-              :to="`/uploads/${doc.id}/${doc.url_friendly_file_name}/read`"
-              class="block"
-            >
+            <div @dblclick="navigateToDocument(doc)" class="block cursor-pointer">
               <div
                 class="bg-white rounded-lg shadow-lg overflow-hidden transform transition duration-300 ease-in-out group-hover:scale-105"
               >
@@ -198,7 +195,7 @@
                   <p class="text-sm text-gray-600 mt-1">{{ formatFileType(doc.file_type) }}</p>
                 </div>
               </div>
-            </router-link>
+            </div>
           </div>
         </div>
       </div>
@@ -366,6 +363,12 @@ export default defineComponent({
       router.push(newPath)
     }
 
+    const navigateToDocument = (doc: any) => {
+      const documentId = doc.id
+      const newPath = `/uploads/${documentId}/${doc.url_friendly_file_name}/read`
+      router.push(newPath)
+    }
+
     const formatFileType = (fileType: string): string => {
       const fileTypeMap: { [key: string]: string } = {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
@@ -459,7 +462,8 @@ export default defineComponent({
       showCreateDirModal,
       newDirName,
       createDirectory,
-      isEmptyState
+      isEmptyState,
+      navigateToDocument
     }
   }
 })
