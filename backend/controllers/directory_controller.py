@@ -1,27 +1,41 @@
-from datetime import datetime
-from typing import List, Optional, Dict, Any
+from datetime import datetime, UTC
+from typing import Optional, Dict, Any, cast, List
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
-from pymongo.database import Database
 
 from config.mongo import get_db, TypedAsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorCollection
 from api.utils.auth_helper import get_current_user
 from db.models.directory import MongoDirectory, create_directory_path
-from db.models.document_uploads import MongoDocumentUpload
+from db.models.document_uploads import MongoDocumentUpload, get_display_title
 from db.models.user import MongoUser
+from api.responses.directory import (
+    DirectoryResponse,
+    DirectoryContentsResponse,
+    DirectoryListResponse,
+)
+from api.responses.document_upload import (
+    DocumentRetrieveResponseForPage,
+    DocumentUploadResponse,
+    ThumbnailInfo,
+)
 
 router = APIRouter()
 
 
-async def get_directory_collection(db: TypedAsyncIOMotorDatabase):
-    return db["directories"]
+async def get_directory_collection(
+    db: TypedAsyncIOMotorDatabase,
+) -> AsyncIOMotorCollection[MongoDirectory]:
+    return cast(AsyncIOMotorCollection[MongoDirectory], db["directories"])
 
 
-async def get_document_uploads_collection(db: TypedAsyncIOMotorDatabase):
-    return db["document_uploads"]
+async def get_document_uploads_collection(
+    db: TypedAsyncIOMotorDatabase,
+) -> AsyncIOMotorCollection[MongoDocumentUpload]:
+    return cast(AsyncIOMotorCollection[MongoDocumentUpload], db["document_uploads"])
 
 
-@router.post("/directories", response_model=Dict[str, Any])
+@router.post("/directories", response_model=DirectoryResponse)
 async def create_directory(
     name: str,
     parent_id: Optional[str] = None,
@@ -81,8 +95,9 @@ async def create_directory(
     path = create_directory_path(parent_path, name)
 
     # Create directory
-    now = datetime.utcnow().isoformat()
-    directory = {
+    now = datetime.now(UTC).isoformat()
+    directory: MongoDirectory = {
+        "_id": ObjectId(),
         "user_id": ObjectId(user_id),
         "name": name,
         "parent_id": ObjectId(parent_id) if parent_id else None,
@@ -94,23 +109,31 @@ async def create_directory(
     result = await directory_collection.insert_one(directory)
     directory["_id"] = result.inserted_id
 
-    # Convert ObjectId to string for response
-    directory["_id"] = str(directory["_id"])
-    directory["user_id"] = str(directory["user_id"])
-    if directory["parent_id"]:
-        directory["parent_id"] = str(directory["parent_id"])
+    # Create a new dictionary for response instead of modifying the TypedDict
+    directory_dict = {
+        "id": str(directory["_id"]),
+        "user_id": str(directory["user_id"]),
+        "name": str(directory["name"]),
+        "parent_id": (
+            str(directory["parent_id"]) if directory.get("parent_id") else None
+        ),
+        "path": str(directory["path"]),
+        "created_at": str(directory["created_at"]),
+        "updated_at": str(directory["updated_at"]),
+    }
 
-    return directory
+    # return DirectoryResponse(directory_dict)
+    return DirectoryResponse.model_validate(directory_dict)
 
 
-@router.get("/directories", response_model=List[Dict[str, Any]])
+@router.get("/directories", response_model=DirectoryListResponse)
 async def list_directories(
     parent_id: Optional[str] = None,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     current_user: MongoUser = Depends(get_current_user),
 ):
     """
-    List directories.
+    List directories for the authenticated user.
 
     Args:
         parent_id: The ID of the parent directory (None for root directories)
@@ -118,33 +141,48 @@ async def list_directories(
         current_user: The authenticated user
 
     Returns:
-        List of directories
+        A list of directories
     """
     user_id = str(current_user["_id"])
     directory_collection = await get_directory_collection(db)
 
     # Build query
-    query = {"user_id": ObjectId(user_id)}
     if parent_id:
-        query["parent_id"] = ObjectId(parent_id)
+        query = {"user_id": ObjectId(user_id), "parent_id": ObjectId(parent_id)}
     else:
         # Use $exists: false to find documents where parent_id is null or doesn't exist
-        query["parent_id"] = {"$exists": False}
+        query = {
+            "user_id": ObjectId(user_id),
+            "$or": [{"parent_id": None}, {"parent_id": {"$exists": False}}],
+        }
 
     # Get directories
-    directories = await directory_collection.find(query).to_list(length=None)
+    directories = cast(
+        List[MongoDirectory],
+        await directory_collection.find(query).to_list(length=None),
+    )
 
-    # Convert ObjectId to string for response
+    # Convert directories to response format
+    directory_responses: List[DirectoryResponse] = []
     for directory in directories:
-        directory["_id"] = str(directory["_id"])
-        directory["user_id"] = str(directory["user_id"])
-        if directory.get("parent_id"):
-            directory["parent_id"] = str(directory["parent_id"])
+        directory_responses.append(
+            DirectoryResponse(
+                id=str(directory["_id"]),
+                user_id=str(directory["user_id"]),
+                name=str(directory["name"]),
+                parent_id=(
+                    str(directory["parent_id"]) if directory.get("parent_id") else None
+                ),
+                path=str(directory["path"]),
+                created_at=str(directory["created_at"]),
+                updated_at=str(directory["updated_at"]),
+            )
+        )
 
-    return directories
+    return DirectoryListResponse(directories=directory_responses)
 
 
-@router.get("/directories/{directory_id}", response_model=Dict[str, Any])
+@router.get("/directories/{directory_id}", response_model=DirectoryResponse)
 async def get_directory(
     directory_id: str,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
@@ -174,16 +212,24 @@ async def get_directory(
             detail="Directory not found",
         )
 
-    # Convert ObjectId to string for response
-    directory["_id"] = str(directory["_id"])
-    directory["user_id"] = str(directory["user_id"])
-    if directory["parent_id"]:
-        directory["parent_id"] = str(directory["parent_id"])
+    # Create a new dictionary for response instead of modifying the TypedDict
+    directory_dict = {
+        "id": str(directory["_id"]),
+        "user_id": str(directory["user_id"]),
+        "name": str(directory["name"]),
+        "parent_id": (
+            str(directory["parent_id"]) if directory.get("parent_id") else None
+        ),
+        "path": str(directory["path"]),
+        "created_at": str(directory["created_at"]),
+        "updated_at": str(directory["updated_at"]),
+    }
 
-    return directory
+    # Use model_validate to handle optional fields properly
+    return DirectoryResponse.model_validate(directory_dict)
 
 
-@router.put("/directories/{directory_id}", response_model=Dict[str, Any])
+@router.put("/directories/{directory_id}", response_model=DirectoryResponse)
 async def update_directory(
     directory_id: str,
     name: str,
@@ -194,7 +240,7 @@ async def update_directory(
     Update a directory.
 
     Args:
-        directory_id: The ID of the directory
+        directory_id: The ID of the directory to update
         name: The new name of the directory
         db: The database connection
         current_user: The authenticated user
@@ -252,7 +298,7 @@ async def update_directory(
     new_path = create_directory_path(parent_path, name)
 
     # Update directory
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
     await directory_collection.update_one(
         {"_id": ObjectId(directory_id)},
         {
@@ -265,9 +311,14 @@ async def update_directory(
     )
 
     # Update all child directories' paths
-    child_directories = await directory_collection.find(
-        {"path": {"$regex": f"^{old_path}/"}, "user_id": ObjectId(user_id)}
-    ).to_list(length=None)
+    child_directories = cast(
+        List[MongoDirectory],
+        await directory_collection.find(
+            {"path": {"$regex": f"^{old_path}/"}, "user_id": ObjectId(user_id)}
+        ).to_list(
+            length=None
+        ),  # type: ignore
+    )
 
     for child in child_directories:
         child_new_path = child["path"].replace(old_path, new_path, 1)
@@ -295,13 +346,26 @@ async def update_directory(
         {"_id": ObjectId(directory_id)}
     )
 
-    # Convert ObjectId to string for response
-    updated_directory["_id"] = str(updated_directory["_id"])
-    updated_directory["user_id"] = str(updated_directory["user_id"])
-    if updated_directory["parent_id"]:
-        updated_directory["parent_id"] = str(updated_directory["parent_id"])
+    # Create a new dictionary for response instead of modifying the TypedDict
+    if updated_directory is None:
+        raise HTTPException(status_code=404, detail="Directory not found")
 
-    return updated_directory
+    directory_dict = {
+        "id": str(updated_directory["_id"]),
+        "user_id": str(updated_directory["user_id"]),
+        "name": str(updated_directory["name"]),
+        "parent_id": (
+            str(updated_directory["parent_id"])
+            if updated_directory.get("parent_id")
+            else None
+        ),
+        "path": str(updated_directory["path"]),
+        "created_at": str(updated_directory["created_at"]),
+        "updated_at": str(updated_directory["updated_at"]),
+    }
+
+    # Use model_validate to handle optional fields properly
+    return DirectoryResponse.model_validate(directory_dict)
 
 
 @router.delete("/directories/{directory_id}")
@@ -338,14 +402,20 @@ async def delete_directory(
         )
 
     # Check if directory has child directories
-    child_directories = await directory_collection.find(
-        {"parent_id": ObjectId(directory_id), "user_id": ObjectId(user_id)}
-    ).to_list(length=None)
+    child_directories = cast(
+        List[MongoDirectory],
+        await directory_collection.find(
+            {"parent_id": ObjectId(directory_id), "user_id": ObjectId(user_id)}
+        ).to_list(length=None),
+    )
 
     # Check if directory has documents
-    documents = await document_collection.find(
-        {"directory_id": ObjectId(directory_id), "user_id": ObjectId(user_id)}
-    ).to_list(length=None)
+    documents = cast(
+        List[MongoDocumentUpload],
+        await document_collection.find(
+            {"directory_id": ObjectId(directory_id), "user_id": ObjectId(user_id)}
+        ).to_list(length=None),
+    )
 
     if (child_directories or documents) and not recursive:
         raise HTTPException(
@@ -377,7 +447,7 @@ async def delete_directory(
     return {"message": "Directory deleted successfully"}
 
 
-@router.post("/directories/{directory_id}/move", response_model=Dict[str, Any])
+@router.post("/directories/{directory_id}/move", response_model=DirectoryResponse)
 async def move_directory(
     directory_id: str,
     new_parent_id: Optional[str] = None,
@@ -394,7 +464,7 @@ async def move_directory(
         current_user: The authenticated user
 
     Returns:
-        The moved directory
+        The updated directory
     """
     user_id = str(current_user["_id"])
     directory_collection = await get_directory_collection(db)
@@ -452,7 +522,7 @@ async def move_directory(
     new_path = create_directory_path(new_parent_path, directory["name"])
 
     # Update directory
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
     await directory_collection.update_one(
         {"_id": ObjectId(directory_id)},
         {
@@ -465,9 +535,12 @@ async def move_directory(
     )
 
     # Update all child directories' paths
-    child_directories = await directory_collection.find(
-        {"path": {"$regex": f"^{old_path}/"}, "user_id": ObjectId(user_id)}
-    ).to_list(length=None)
+    child_directories = cast(
+        List[MongoDirectory],
+        await directory_collection.find(
+            {"path": {"$regex": f"^{old_path}/"}, "user_id": ObjectId(user_id)}
+        ).to_list(length=None),
+    )
 
     for child in child_directories:
         child_new_path = child["path"].replace(old_path, new_path, 1)
@@ -495,16 +568,29 @@ async def move_directory(
         {"_id": ObjectId(directory_id)}
     )
 
-    # Convert ObjectId to string for response
-    updated_directory["_id"] = str(updated_directory["_id"])
-    updated_directory["user_id"] = str(updated_directory["user_id"])
-    if updated_directory["parent_id"]:
-        updated_directory["parent_id"] = str(updated_directory["parent_id"])
+    # Create a new dictionary for response instead of modifying the TypedDict
+    if updated_directory is None:
+        raise HTTPException(status_code=404, detail="Directory not found")
 
-    return updated_directory
+    directory_dict = {
+        "id": str(updated_directory["_id"]),
+        "user_id": str(updated_directory["user_id"]),
+        "name": str(updated_directory["name"]),
+        "parent_id": (
+            str(updated_directory["parent_id"])
+            if updated_directory.get("parent_id")
+            else None
+        ),
+        "path": str(updated_directory["path"]),
+        "created_at": str(updated_directory["created_at"]),
+        "updated_at": str(updated_directory["updated_at"]),
+    }
+
+    # Use model_validate to handle optional fields properly
+    return DirectoryResponse.model_validate(directory_dict)
 
 
-@router.get("/directories/path/{path:path}", response_model=Dict[str, Any])
+@router.get("/directories/path/{path:path}", response_model=DirectoryResponse)
 async def get_directory_by_path(
     path: str,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
@@ -538,16 +624,24 @@ async def get_directory_by_path(
             detail="Directory not found",
         )
 
-    # Convert ObjectId to string for response
-    directory["_id"] = str(directory["_id"])
-    directory["user_id"] = str(directory["user_id"])
-    if directory["parent_id"]:
-        directory["parent_id"] = str(directory["parent_id"])
+    # Create a new dictionary for response instead of modifying the TypedDict
+    directory_dict = {
+        "id": str(directory["_id"]),
+        "user_id": str(directory["user_id"]),
+        "name": str(directory["name"]),
+        "parent_id": (
+            str(directory["parent_id"]) if directory.get("parent_id") else None
+        ),
+        "path": str(directory["path"]),
+        "created_at": str(directory["created_at"]),
+        "updated_at": str(directory["updated_at"]),
+    }
 
-    return directory
+    # Use model_validate to handle optional fields properly
+    return DirectoryResponse.model_validate(directory_dict)
 
 
-@router.get("/directories/root/contents", response_model=Dict[str, Any])
+@router.get("/directories/root/contents", response_model=DirectoryContentsResponse)
 async def get_root_directory_contents(
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
     current_user: MongoUser = Depends(get_current_user),
@@ -565,7 +659,9 @@ async def get_root_directory_contents(
     return await get_directory_contents(None, db, current_user)
 
 
-@router.get("/directories/{directory_id}/contents", response_model=Dict[str, Any])
+@router.get(
+    "/directories/{directory_id}/contents", response_model=DirectoryContentsResponse
+)
 async def get_directory_contents(
     directory_id: Optional[str] = None,
     db: TypedAsyncIOMotorDatabase = Depends(get_db),
@@ -575,7 +671,7 @@ async def get_directory_contents(
     Get the contents of a directory (subdirectories and documents).
 
     Args:
-        directory_id: The ID of the directory
+        directory_id: The ID of the directory (None for root)
         db: The database connection
         current_user: The authenticated user
 
@@ -587,42 +683,84 @@ async def get_directory_contents(
     document_collection = await get_document_uploads_collection(db)
 
     # Build query for directories
-    dir_query = {"user_id": ObjectId(user_id)}
     if directory_id:
-        dir_query["parent_id"] = ObjectId(directory_id)
+        dir_query = {"user_id": ObjectId(user_id), "parent_id": ObjectId(directory_id)}
     else:
-        # Use $exists: false to find documents where parent_id is null or doesn't exist
-        dir_query["parent_id"] = {"$exists": False}
+        # Match documents where parent_id is null OR doesn't exist
+        dir_query = {
+            "user_id": ObjectId(user_id),
+            "$or": [{"parent_id": None}, {"parent_id": {"$exists": False}}],
+        }
 
     # Get directories
-    directories = await directory_collection.find(dir_query).to_list(length=None)
+    directories = cast(
+        List[MongoDirectory],
+        await directory_collection.find(dir_query).to_list(length=None),
+    )
 
-    # Convert ObjectId to string for response
+    # Convert directories to response format
+    directory_responses: List[DirectoryResponse] = []
     for directory in directories:
-        directory["_id"] = str(directory["_id"])
-        directory["user_id"] = str(directory["user_id"])
-        if directory.get("parent_id"):
-            directory["parent_id"] = str(directory["parent_id"])
+        directory_responses.append(
+            DirectoryResponse(
+                id=str(directory["_id"]),
+                user_id=str(directory["user_id"]),
+                name=str(directory["name"]),
+                parent_id=(
+                    str(directory["parent_id"]) if directory.get("parent_id") else None
+                ),
+                path=str(directory["path"]),
+                created_at=str(directory["created_at"]),
+                updated_at=str(directory["updated_at"]),
+            )
+        )
 
     # Build query for documents
-    doc_query = {"user_id": ObjectId(user_id)}
     if directory_id:
-        doc_query["directory_id"] = ObjectId(directory_id)
+        doc_query = {
+            "user_id": ObjectId(user_id),
+            "directory_id": ObjectId(directory_id),
+        }
     else:
-        # Use $exists: false to find documents where directory_id is null or doesn't exist
-        doc_query["directory_id"] = {"$exists": False}
+        # For root level, find documents with no directory_id
+        # Using $or to handle both cases: field doesn't exist or is explicitly null
+        doc_query = {
+            "user_id": ObjectId(user_id),
+            "$or": [{"directory_id": None}, {"directory_id": {"$exists": False}}],
+        }
 
     # Get documents
-    documents = await document_collection.find(doc_query).to_list(length=None)
+    documents = cast(
+        List[MongoDocumentUpload],
+        await document_collection.find(doc_query).to_list(length=None),
+    )
 
-    # Convert ObjectId to string for response
+    # Convert documents to response format
+    document_responses: List[DocumentUploadResponse] = []
     for document in documents:
-        document["_id"] = str(document["_id"])
-        document["user_id"] = str(document["user_id"])
-        if document.get("directory_id"):
-            document["directory_id"] = str(document["directory_id"])
+        # Create base response with required fields
+        doc_response = DocumentRetrieveResponseForPage(
+            id=str(document["_id"]),
+            file_name=document["file_details"]["file_name"],
+            file_type=document["file_details"]["file_type"],
+            url_friendly_file_name=document["file_details"]["url_friendly_file_name"],
+            custom_title=document.get("custom_title"),
+            title=get_display_title(document),
+            note=None,
+            thumbnail=None,
+            extracted_metadata=None,
+        )
 
-    return {"directories": directories, "documents": documents}
+        # Add thumbnail if available
+        thumbnail = document.get("thumbnail")
+        if thumbnail and "s3_url" in thumbnail:
+            doc_response.thumbnail = ThumbnailInfo(presigned_url=thumbnail["s3_url"])
+
+        document_responses.append(doc_response)
+
+    return DirectoryContentsResponse(
+        directories=directory_responses, documents=document_responses
+    )
 
 
 @router.post("/documents/{document_id}/move", response_model=Dict[str, Any])
@@ -642,7 +780,7 @@ async def move_document(
         current_user: The authenticated user
 
     Returns:
-        The moved document
+        The updated document
     """
     user_id = str(current_user["_id"])
     directory_collection = await get_directory_collection(db)
@@ -687,10 +825,16 @@ async def move_document(
         {"_id": ObjectId(document_id)}
     )
 
-    # Convert ObjectId to string for response
-    updated_document["_id"] = str(updated_document["_id"])
-    updated_document["user_id"] = str(updated_document["user_id"])
-    if updated_document.get("directory_id"):
-        updated_document["directory_id"] = str(updated_document["directory_id"])
+    if updated_document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
 
-    return updated_document
+    # Create a new response dictionary instead of modifying the original
+    response = {
+        "id": str(updated_document["_id"]),
+        "user_id": str(updated_document["user_id"]),
+    }
+
+    if updated_document.get("directory_id"):
+        response["directory_id"] = str(updated_document["directory_id"])
+
+    return response
