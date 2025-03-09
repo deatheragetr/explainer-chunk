@@ -61,7 +61,7 @@
           <div
             v-for="dir in directoryContents.directories"
             :key="dir._id"
-            @dblclick="navigateToDirectory(dir._id)"
+            @click="navigateToDirectory(dir._id)"
             class="bg-white rounded-lg shadow-md overflow-hidden transform transition duration-300 ease-in-out hover:scale-105 cursor-pointer group"
           >
             <div class="p-4 flex items-center">

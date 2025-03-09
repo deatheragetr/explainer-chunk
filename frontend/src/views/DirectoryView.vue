@@ -264,7 +264,7 @@ onMounted(() => {
             @dragleave.stop="onDragLeave"
             @drop.stop="onDrop($event, directory._id)"
           >
-            <div class="flex items-center mb-2" @dblclick="navigateToDirectory(directory._id)">
+            <div class="flex items-center mb-2" @click="navigateToDirectory(directory._id)">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 class="h-8 w-8 text-indigo-500 mr-3"
