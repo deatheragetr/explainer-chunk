@@ -15,11 +15,12 @@ const toggleSidebar = () => {
 }
 
 onMounted(async () => {
-  // Fetch all directories first
-  await directoryStore.fetchAllDirectories()
-
-  // If we're on the home page, ensure we're navigated to the root directory
+  // Only fetch directories and navigate if we're on the home page
   if (router.currentRoute.value.name === 'home') {
+    // Fetch all directories first
+    await directoryStore.fetchAllDirectories()
+
+    // Navigate to the root directory
     await directoryStore.navigateToDirectory(null)
   }
 })

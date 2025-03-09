@@ -9,15 +9,19 @@ const route = useRoute()
 const { resetDocument } = useDocumentTitle()
 
 const showNavBar = computed(() => {
-  // Add routes where you don't want to show the navbar
-  const routesWithoutNavBar = ['/auth']
-  return !routesWithoutNavBar.includes(route.path)
+  // Don't show navbar on auth pages
+  return !route.path.startsWith('/auth')
 })
 
 const useSidebar = computed(() => {
-  // Add routes where you want to use the sidebar layout
-  const routesWithSidebar = ['/', '/settings']
-  return routesWithSidebar.some((path) => route.path.startsWith(path))
+  // Only show sidebar on the home page and document pages
+  // Explicitly exclude settings and auth pages
+  if (route.path === '/settings' || route.path.startsWith('/auth')) {
+    return false
+  }
+
+  // Only show sidebar on home and document pages
+  return route.path === '/' || route.path.includes('/uploads/')
 })
 
 // Watch for route changes to reset document title when not on a document page
