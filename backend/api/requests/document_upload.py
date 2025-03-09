@@ -22,6 +22,7 @@ class DocumentUploadRequest(BaseModel):
     extracted_metadata: Annotated[
         Dict[str, Any], "Extracted metadata from the document"
     ]
+    directory_id: Optional[str] = None
 
     # Redundant?
     @field_validator("file_key")
@@ -51,6 +52,12 @@ class DocumentUpdateRequest(BaseModel):
     """Request model for updating document properties"""
 
     custom_title: Optional[str] = None
+    directory_id: Optional[str] = None
 
     class Config:
-        json_schema_extra = {"example": {"custom_title": "My Custom Document Title"}}
+        json_schema_extra = {
+            "example": {
+                "custom_title": "My Custom Document Title",
+                "directory_id": "60d21b4667d0d8992e610c85",
+            }
+        }

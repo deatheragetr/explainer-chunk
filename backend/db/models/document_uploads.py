@@ -106,6 +106,12 @@ class MongoDocumentUpload(TypedDict):
         Annotated[ThumbnailDetails, "Details of the document thumbnail"]
     ]
     note: Optional[Annotated[Note, "End User notes on the document"]]
+    directory_id: Optional[
+        Annotated[ObjectId, "ID of the directory this document belongs to"]
+    ]
+    directory_path: Optional[
+        Annotated[str, "Path of the directory this document belongs to"]
+    ]
 
 
 def generate_s3_key_for_file(

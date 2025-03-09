@@ -3,7 +3,7 @@ import logging
 from aiohttp import ClientSession
 import mimetypes
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Optional
 
 from config.huey import huey
 from config.redis import Redis
@@ -57,7 +57,9 @@ async def get_mongo_client(
         client.close()
 
 
-async def async_capture(url: str, document_upload_id: str, user_id: str):
+async def async_capture(
+    url: str, document_upload_id: str, user_id: str, directory_id: Optional[str] = None
+):
     async with get_redis_client() as redis_client, get_session() as session, get_mongo_client(
         "document_uploads"
     ) as mongo_collection:
@@ -85,6 +87,7 @@ async def async_capture(url: str, document_upload_id: str, user_id: str):
                         document_upload_id,
                         logger,
                         user_id,
+                        directory_id,
                     )
                 elif normalized_type in supported_file_types.values():
                     result = await capture_non_html(
@@ -97,6 +100,7 @@ async def async_capture(url: str, document_upload_id: str, user_id: str):
                         normalized_type,
                         logger,
                         user_id,
+                        directory_id,
                     )
                 else:
                     await progress_updater.error()
@@ -117,10 +121,14 @@ async def async_capture(url: str, document_upload_id: str, user_id: str):
 
 
 @huey.task()
-def capture_website(url: str, document_upload_id: str, user_id: str):
+def capture_website(
+    url: str, document_upload_id: str, user_id: str, directory_id: Optional[str] = None
+):
     logger.info(f"Starting capture_website task: URL={url}, ID={document_upload_id}")
     try:
-        result = asyncio.run(async_capture(url, document_upload_id, user_id))
+        result = asyncio.run(
+            async_capture(url, document_upload_id, user_id, directory_id)
+        )
         logger.info(
             f"Finished capture_website task: URL={url}, ID={document_upload_id}"
         )

@@ -11,6 +11,7 @@ from controllers import (
     websocket_controller,
     ai_controller,
     auth_controller,
+    directory_controller,
 )
 from background.subscribers.redis_subscriber import RedisSubscriber
 from config.redis import redis_pool, RedisType
@@ -84,6 +85,7 @@ app.include_router(website_capture_controller.router, tags=["website_capture"])
 app.include_router(upload_controller.router, tags=["upload"])
 app.include_router(document_upload_controller.router, tags=["document_upload"])
 app.include_router(ai_controller.router, tags=["AI"])
+app.include_router(directory_controller.router, tags=["directory"])
 
 
 if __name__ == "__main__":

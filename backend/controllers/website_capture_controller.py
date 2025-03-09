@@ -16,7 +16,10 @@ async def capture_website_endpoint(
     try:
         # Huey decorated tasks return a results object, which confuses the type checker: https://huey.readthedocs.io/en/latest/api.html#Result
         capture_website(
-            request.url, request.document_upload_id, str(current_user["_id"])
+            request.url,
+            request.document_upload_id,
+            str(current_user["_id"]),
+            request.directory_id,
         )
         return WebsiteCaptureResponse(
             url=request.url, document_upload_id=request.document_upload_id
