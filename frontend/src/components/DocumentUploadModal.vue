@@ -375,16 +375,20 @@ export default defineComponent({
           isLoading.value = true
           error.value = ''
           importProgress.value = { status: 'Capturing website', progress: 0, payload: {} }
+          const importDocRes = await api.post<ImportDocumentUploadResponse>(
+            '/document-uploads/imports',
+            {}
+          )
+          connectWebSocket(importDocRes.data.id)
 
-          const params = new URLSearchParams()
-          params.append('url', url.value)
-          params.append('directory_id', selectedDirectoryId.value || '')
+          const captureRes = await api.post<WebsiteCaptureResponse>('/capture-website/', {
+            url: url.value,
+            document_upload_id: importDocRes.data.id
+          })
 
-          const response = await api.post(`/website-capture?${params.toString()}`)
-
-          importProgress.value = { status: 'Complete', progress: 100, payload: response.data }
-          emit('document-loaded', response.data)
-          closeModal()
+          importProgress.value = { status: 'Complete', progress: 100, payload: captureRes.data }
+          // emit('document-loaded', captureRes.data) // TODO: Confirm we even need this?
+          // closeModal()
         } catch (e) {
           console.error('Error capturing website:', e)
           error.value = 'Failed to capture website. Please try again.'
