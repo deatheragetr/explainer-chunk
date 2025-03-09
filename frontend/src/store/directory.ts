@@ -47,8 +47,15 @@ export const useDirectoryStore = defineStore('directory', {
           return
         }
 
-        // Start with root directories
-        this.directories = [...rootDirectories]
+        // Use a Map to ensure directories are unique by ID
+        const directoryMap = new Map<string, Directory>()
+
+        // Add root directories to the map
+        for (const dir of rootDirectories) {
+          if (dir._id) {
+            directoryMap.set(dir._id, dir)
+          }
+        }
 
         // Instead of recursion, we'll use a queue-based approach
         const directoryQueue = [...rootDirectories]
@@ -67,18 +74,24 @@ export const useDirectoryStore = defineStore('directory', {
             continue
           }
 
-          // Add new children to our directories array and queue
+          // Add new children to our map and queue
           for (const child of children) {
             if (child._id && !processedIds.has(child._id)) {
-              this.directories.push(child)
+              directoryMap.set(child._id, child)
               directoryQueue.push(child)
               processedIds.add(child._id)
             }
           }
         }
 
+        // Convert map to array for state
+        this.directories = Array.from(directoryMap.values())
+
         // Build the directory tree
         this.directoryTree = buildDirectoryTree(this.directories)
+
+        // Log the number of directories for debugging
+        console.log(`Fetched ${this.directories.length} unique directories`)
       } catch (error: any) {
         this.error = error.message || 'Failed to fetch directories'
         console.error('Error fetching directories:', error)
@@ -123,7 +136,17 @@ export const useDirectoryStore = defineStore('directory', {
       this.error = null
       try {
         const newDirectory = await directoryService.createDirectory(name, parentId)
-        this.directories.push(newDirectory)
+
+        // Check if directory already exists in the state
+        const existingIndex = this.directories.findIndex((dir) => dir._id === newDirectory._id)
+        if (existingIndex !== -1) {
+          // Update existing directory
+          this.directories[existingIndex] = newDirectory
+        } else {
+          // Add new directory
+          this.directories.push(newDirectory)
+        }
+
         this.directoryTree = buildDirectoryTree(this.directories)
 
         // Refresh directory contents if we're in the parent directory
@@ -229,13 +252,38 @@ export const useDirectoryStore = defineStore('directory', {
         const directory = this.getDirectoryById(directoryId)
         const oldParentId = directory?.parent_id
 
-        // Update local state
-        await this.fetchAllDirectories() // Refresh all directories to get updated paths
+        // Update local state - instead of fetching all directories again, just update the moved one
+        const index = this.directories.findIndex((dir) => dir._id === directoryId)
+        if (index !== -1) {
+          this.directories[index] = movedDirectory
+
+          // Also update any child directories that might have changed paths
+          const childDirectories = await directoryService.getDirectories(directoryId)
+          if (Array.isArray(childDirectories)) {
+            // Update existing children or add new ones
+            for (const child of childDirectories) {
+              const childIndex = this.directories.findIndex((dir) => dir._id === child._id)
+              if (childIndex !== -1) {
+                this.directories[childIndex] = child
+              } else {
+                this.directories.push(child)
+              }
+            }
+          }
+
+          // Rebuild the directory tree
+          this.directoryTree = buildDirectoryTree(this.directories)
+        } else {
+          // If we can't find the directory, do a full refresh
+          await this.fetchAllDirectories()
+        }
 
         // Refresh contents if we're in the old or new parent directory
         if (
           this.currentDirectory &&
-          (this.currentDirectory._id === directoryId || this.currentDirectory._id === newParentId)
+          (this.currentDirectory._id === directoryId ||
+            this.currentDirectory._id === newParentId ||
+            this.currentDirectory._id === oldParentId)
         ) {
           await this.fetchDirectoryContents(this.currentDirectory._id)
         }

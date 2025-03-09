@@ -215,8 +215,9 @@ const createDirectory = async () => {
     <div class="directory-nodes">
       <template v-for="node in directoryTree" :key="node._id">
         <div class="directory-node">
+          <!-- Directory header -->
           <div
-            class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+            class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
             :class="{
               'bg-indigo-100': currentDirectoryId === node._id,
               'justify-center': collapsed
@@ -228,7 +229,7 @@ const createDirectory = async () => {
                 !collapsed &&
                 (node.children.length > 0 || (directoryDocuments.get(node._id)?.length ?? 0) > 0)
               "
-              @click="toggleExpand(node, $event)"
+              @click.stop="toggleExpand(node, $event)"
               class="mr-1 text-gray-500 focus:outline-none"
             >
               <svg
@@ -273,7 +274,7 @@ const createDirectory = async () => {
             }}</span>
             <button
               v-if="!collapsed"
-              @click="openCreateModal(node._id, $event)"
+              @click.stop="openCreateModal(node._id, $event)"
               class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
               title="Add subdirectory"
             >
@@ -292,20 +293,44 @@ const createDirectory = async () => {
             </button>
           </div>
 
+          <!-- Directory contents (when expanded) -->
           <div v-if="!collapsed && node.isExpanded" class="pl-5 mt-1">
+            <!-- Documents in this directory -->
+            <div
+              v-for="doc in directoryDocuments.get(node._id) || []"
+              :key="doc.id"
+              class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+              @click.stop="navigateToDocument(doc)"
+            >
+              <!-- File type icon -->
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5 mr-2 text-blue-500"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+            </div>
+
             <!-- Child directories -->
             <template v-for="childNode in node.children" :key="childNode._id">
               <div
                 class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
                 :class="{ 'bg-indigo-100': currentDirectoryId === childNode._id }"
-                @click="navigateToDirectory(childNode._id)"
+                @click.stop="navigateToDirectory(childNode._id)"
               >
                 <button
                   v-if="
                     childNode.children.length > 0 ||
                     (directoryDocuments.get(childNode._id)?.length ?? 0) > 0
                   "
-                  @click="toggleExpand(childNode, $event)"
+                  @click.stop="toggleExpand(childNode, $event)"
                   class="mr-1 text-gray-500 focus:outline-none"
                 >
                   <svg
@@ -346,7 +371,7 @@ const createDirectory = async () => {
                 </svg>
                 <span class="text-gray-700 text-sm truncate flex-grow">{{ childNode.name }}</span>
                 <button
-                  @click="openCreateModal(childNode._id, $event)"
+                  @click.stop="openCreateModal(childNode._id, $event)"
                   class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Add subdirectory"
                 >
@@ -365,8 +390,9 @@ const createDirectory = async () => {
                 </button>
               </div>
 
-              <!-- Documents in child directory -->
+              <!-- Child directory contents (when expanded) -->
               <div v-if="childNode.isExpanded" class="pl-5 mt-1">
+                <!-- Documents in child directory -->
                 <div
                   v-for="doc in directoryDocuments.get(childNode._id) || []"
                   :key="doc.id"
@@ -416,31 +442,6 @@ const createDirectory = async () => {
                 </template>
               </div>
             </template>
-
-            <!-- Documents in this directory -->
-            <div v-if="node.isExpanded">
-              <div
-                v-for="doc in directoryDocuments.get(node._id) || []"
-                :key="doc.id"
-                class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-                @click.stop="navigateToDocument(doc)"
-              >
-                <!-- File type icon -->
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 mr-2 text-blue-500"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
-              </div>
-            </div>
           </div>
         </div>
       </template>
