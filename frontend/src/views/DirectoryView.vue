@@ -356,7 +356,7 @@ onMounted(() => {
             class="bg-white rounded-lg shadow-sm p-4 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
             draggable="true"
             @dragstart="onDragStart($event, 'document', document.id)"
-            @dblclick="navigateToDocument(document.id, document.file_name)"
+            @click="navigateToDocument(document.id, document.file_name)"
           >
             <div class="flex items-center">
               <svg

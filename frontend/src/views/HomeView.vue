@@ -158,7 +158,7 @@
         <h2 class="text-lg font-semibold text-gray-700 mb-4">Documents</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <div v-for="doc in documents" :key="doc.id" class="group">
-            <div @dblclick="navigateToDocument(doc)" class="block cursor-pointer">
+            <div @click="navigateToDocument(doc)" class="block cursor-pointer">
               <div
                 class="bg-white rounded-lg shadow-lg overflow-hidden transform transition duration-300 ease-in-out group-hover:scale-105"
               >
