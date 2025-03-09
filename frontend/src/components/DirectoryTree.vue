@@ -70,7 +70,23 @@ const prefetchDirectoryContents = async () => {
 
 // Call prefetch on component mount
 onMounted(async () => {
+  // Make sure we have all directories
+  if (directoryTree.value.length === 0) {
+    await directoryStore.fetchAllDirectories()
+  }
+
+  // Prefetch contents for all directories
   await prefetchDirectoryContents()
+
+  // Ensure the current directory is properly set
+  const currentId = directoryStore.getCurrentDirectoryId
+  if (currentId) {
+    // If we have a current directory, make sure its contents are loaded
+    await fetchDirectoryContents(currentId)
+  } else {
+    // Otherwise, ensure root contents are loaded
+    await fetchDirectoryContents(null)
+  }
 })
 
 const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
@@ -89,14 +105,18 @@ const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
 const navigateToDirectory = async (directoryId: string) => {
   const directory = directoryStore.getDirectoryById(directoryId)
   if (directory) {
-    await router.push('/')
+    // First navigate to the directory in the store
     await directoryStore.navigateToDirectory(directoryId)
+    // Then update the URL without triggering a full page reload
+    await router.push({ name: 'home', replace: true })
   }
 }
 
 const navigateToRoot = async () => {
-  await router.push('/')
+  // First navigate to the root directory in the store
   await directoryStore.navigateToDirectory(null)
+  // Then update the URL without triggering a full page reload
+  await router.push({ name: 'home', replace: true })
 }
 
 const navigateToDocument = (document: LightweightDocument) => {
