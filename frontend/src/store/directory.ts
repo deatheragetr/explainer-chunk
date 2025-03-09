@@ -93,7 +93,8 @@ export const useDirectoryStore = defineStore('directory', {
       this.isLoading = true
       this.error = null
       try {
-        this.directoryContents = await directoryService.getDirectoryContents(directoryId)
+        const contents = await directoryService.getDirectoryContents(directoryId)
+        this.directoryContents = contents
 
         // If we're fetching a specific directory, set it as current
         if (directoryId) {
@@ -106,9 +107,12 @@ export const useDirectoryStore = defineStore('directory', {
           this.currentDirectory = null
           this.breadcrumbs = [{ _id: null, name: 'Home', path: '/' }]
         }
+
+        return contents
       } catch (error: any) {
         this.error = error.message || 'Failed to fetch directory contents'
         console.error('Error fetching directory contents:', error)
+        return null
       } finally {
         this.isLoading = false
       }

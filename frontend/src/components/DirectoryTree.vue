@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useDirectoryStore } from '@/store/directory'
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import type { DirectoryTreeNode } from '@/types/directory'
+import type { DirectoryTreeNode, LightweightDocument } from '@/types/directory'
 
 const props = defineProps({
   collapsed: {
@@ -16,6 +16,59 @@ const router = useRouter()
 
 const directoryTree = computed(() => directoryStore.directoryTree)
 const currentDirectoryId = computed(() => directoryStore.getCurrentDirectoryId)
+const directoryContents = computed(() => directoryStore.directoryContents)
+
+// Track documents for each directory
+const directoryDocuments = ref<Map<string | null, LightweightDocument[]>>(new Map())
+
+// Update directoryDocuments when directoryContents changes
+watch(
+  directoryContents,
+  (contents) => {
+    if (contents && currentDirectoryId.value !== undefined) {
+      // Store documents for the current directory
+      directoryDocuments.value.set(currentDirectoryId.value, contents.documents || [])
+    }
+  },
+  { immediate: true }
+)
+
+// Fetch directory contents when navigating to a directory
+const fetchDirectoryContents = async (directoryId: string | null) => {
+  try {
+    await directoryStore.fetchDirectoryContents(directoryId)
+    // Get the contents from the store after fetching
+    const contents = directoryStore.directoryContents
+    if (contents && contents.documents) {
+      directoryDocuments.value.set(directoryId, contents.documents)
+    }
+  } catch (error) {
+    console.error('Error fetching directory contents:', error)
+  }
+}
+
+// Prefetch contents for all directories in the tree
+const prefetchDirectoryContents = async () => {
+  // First fetch root contents
+  await fetchDirectoryContents(null)
+
+  // Then fetch for all directories in the tree
+  const fetchForNode = async (node: DirectoryTreeNode) => {
+    await fetchDirectoryContents(node._id)
+    for (const child of node.children) {
+      await fetchForNode(child)
+    }
+  }
+
+  for (const node of directoryTree.value) {
+    await fetchForNode(node)
+  }
+}
+
+// Call prefetch on component mount
+onMounted(async () => {
+  await prefetchDirectoryContents()
+})
 
 const toggleExpand = (node: DirectoryTreeNode, event: Event) => {
   event.stopPropagation()
@@ -33,6 +86,36 @@ const navigateToDirectory = async (directoryId: string) => {
 const navigateToRoot = async () => {
   await router.push('/')
   await directoryStore.navigateToDirectory(null)
+}
+
+const navigateToDocument = (document: LightweightDocument) => {
+  // @ts-ignore - We know these properties exist based on the interface
+  router.push(`/uploads/${document.id}/${document.url_friendly_file_name}/read`)
+}
+
+const getFileIcon = (fileType: string) => {
+  // Return appropriate icon based on file type
+  if (fileType.includes('pdf')) {
+    return 'pdf'
+  } else if (fileType.includes('word') || fileType.includes('docx')) {
+    return 'word'
+  } else if (
+    fileType.includes('excel') ||
+    fileType.includes('spreadsheet') ||
+    fileType.includes('csv')
+  ) {
+    return 'excel'
+  } else if (fileType.includes('html')) {
+    return 'html'
+  } else if (fileType.includes('markdown') || fileType.includes('md')) {
+    return 'markdown'
+  } else if (fileType.includes('json')) {
+    return 'json'
+  } else if (fileType.includes('text') || fileType.includes('txt')) {
+    return 'text'
+  } else {
+    return 'generic'
+  }
 }
 
 const showCreateModal = ref(false)
@@ -102,6 +185,31 @@ const createDirectory = async () => {
         </svg>
         <span v-if="!collapsed" class="text-gray-700 text-sm">Home</span>
       </div>
+
+      <!-- Root level documents -->
+      <div v-if="!collapsed" class="ml-5 mt-1">
+        <div
+          v-for="doc in directoryDocuments.get(null) || []"
+          :key="doc.id"
+          class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+          @click="navigateToDocument(doc)"
+        >
+          <!-- File type icon -->
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5 mr-2 text-blue-500"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="directory-nodes">
@@ -116,7 +224,10 @@ const createDirectory = async () => {
             @click="navigateToDirectory(node._id)"
           >
             <button
-              v-if="!collapsed && node.children.length > 0"
+              v-if="
+                !collapsed &&
+                (node.children.length > 0 || (directoryDocuments.get(node._id)?.length ?? 0) > 0)
+              "
               @click="toggleExpand(node, $event)"
               class="mr-1 text-gray-500 focus:outline-none"
             >
@@ -182,6 +293,7 @@ const createDirectory = async () => {
           </div>
 
           <div v-if="!collapsed && node.isExpanded" class="pl-5 mt-1">
+            <!-- Child directories -->
             <template v-for="childNode in node.children" :key="childNode._id">
               <div
                 class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
@@ -189,7 +301,10 @@ const createDirectory = async () => {
                 @click="navigateToDirectory(childNode._id)"
               >
                 <button
-                  v-if="childNode.children.length > 0"
+                  v-if="
+                    childNode.children.length > 0 ||
+                    (directoryDocuments.get(childNode._id)?.length ?? 0) > 0
+                  "
                   @click="toggleExpand(childNode, $event)"
                   class="mr-1 text-gray-500 focus:outline-none"
                 >
@@ -250,13 +365,38 @@ const createDirectory = async () => {
                 </button>
               </div>
 
-              <!-- Recursive rendering for deeper levels -->
+              <!-- Documents in child directory -->
               <div v-if="childNode.isExpanded" class="pl-5 mt-1">
-                <template v-for="grandchildNode in childNode.children" :key="grandchildNode._id">
+                <div
+                  v-for="doc in directoryDocuments.get(childNode._id) || []"
+                  :key="doc.id"
+                  class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                  @click.stop="navigateToDocument(doc)"
+                >
+                  <!-- File type icon -->
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-5 w-5 mr-2 text-blue-500"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+                </div>
+
+                <!-- Render nested child directories recursively -->
+                <template v-if="childNode.children.length > 0">
                   <div
+                    v-for="grandchildNode in childNode.children"
+                    :key="grandchildNode._id"
                     class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
                     :class="{ 'bg-indigo-100': currentDirectoryId === grandchildNode._id }"
-                    @click="navigateToDirectory(grandchildNode._id)"
+                    @click.stop="navigateToDirectory(grandchildNode._id)"
                   >
                     <span class="w-4"></span>
                     <svg
@@ -272,28 +412,35 @@ const createDirectory = async () => {
                     <span class="text-gray-700 text-sm truncate flex-grow">{{
                       grandchildNode.name
                     }}</span>
-                    <button
-                      @click="openCreateModal(grandchildNode._id, $event)"
-                      class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Add subdirectory"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path
-                          fill-rule="evenodd"
-                          d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                    </button>
                   </div>
                 </template>
               </div>
             </template>
+
+            <!-- Documents in this directory -->
+            <div v-if="node.isExpanded">
+              <div
+                v-for="doc in directoryDocuments.get(node._id) || []"
+                :key="doc.id"
+                class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                @click.stop="navigateToDocument(doc)"
+              >
+                <!-- File type icon -->
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5 mr-2 text-blue-500"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -340,7 +487,7 @@ const createDirectory = async () => {
 </template>
 
 <style scoped>
-.directory-node {
-  transition: all 0.2s ease-in-out;
+.directory-tree {
+  font-size: 0.875rem;
 }
 </style>

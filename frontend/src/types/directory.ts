@@ -9,9 +9,17 @@ export interface Directory {
   updated_at: string
 }
 
+export interface LightweightDocument {
+  id: string
+  file_name: string
+  file_type: string
+  url_friendly_file_name: string
+  title: string
+}
+
 export interface DirectoryContents {
   directories: Directory[]
-  documents: any[] // Using any for now, but should be replaced with a proper Document type
+  documents: LightweightDocument[]
 }
 
 export interface DirectoryBreadcrumb {
