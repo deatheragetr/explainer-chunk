@@ -111,13 +111,14 @@ export const useDirectoryStore = defineStore('directory', {
       this.isLoading = true
       this.error = null
 
-      if (
-        (directoryId === null && this.currentDirectory === null) ||
-        (this.currentDirectory && this.currentDirectory._id === directoryId)
-      ) {
-        console.log(`Already on directory ${directoryId || 'root'}, skipping fetch`)
-        return this.directoryContents
-      }
+      // TODO: Figure out how best to avoid duplicate fetches to /directories/:id/contents
+      // if (
+      //   (directoryId === null && this.currentDirectory === null) ||
+      //   (this.currentDirectory && this.currentDirectory._id === directoryId)
+      // ) {
+      //   console.log(`Already on directory ${directoryId || 'root'}, skipping fetch`)
+      //   return this.directoryContents
+      // }
 
       try {
         const contents = await directoryService.getDirectoryContents(directoryId)

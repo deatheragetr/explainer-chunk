@@ -52,24 +52,6 @@ const fetchDirectoryContents = async (directoryId: string | null) => {
   }
 }
 
-// Prefetch contents for all directories in the tree
-const prefetchDirectoryContents = async () => {
-  // First fetch root contents
-  await fetchDirectoryContents(null)
-
-  // Then fetch for all directories in the tree
-  const fetchForNode = async (node: DirectoryTreeNode) => {
-    await fetchDirectoryContents(node._id)
-    for (const child of node.children) {
-      await fetchForNode(child)
-    }
-  }
-
-  for (const node of directoryTree.value) {
-    await fetchForNode(node)
-  }
-}
-
 onMounted(async () => {
   // Only load the tree structure - don't navigate
   if (directoryTree.value.length === 0) {
@@ -172,24 +154,27 @@ const toggleRootExpand = (event: Event) => {
 
 <template>
   <div class="directory-tree">
-    <div v-if="!collapsed" class="flex justify-between items-center mb-3">
-      <h3 class="text-sm font-semibold text-gray-700">Directories</h3>
+    <div v-if="!collapsed" class="flex justify-start items-center mb-3">
       <button
         @click.stop.prevent="openCreateModal(null, $event)"
-        class="text-indigo-600 hover:text-indigo-800 focus:outline-none"
-        title="Add root directory"
+        class="p-1.5 rounded-md hover:bg-indigo-50 text-indigo-500 hover:text-indigo-600 transition-colors focus:outline-none focus:ring-1 focus:ring-indigo-300"
+        title="Add Folder"
       >
+        <!-- Same subtle folder with gentle plus icon -->
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="h-4 w-4"
-          viewBox="0 0 20 20"
-          fill="currentColor"
+          class="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
         >
           <path
-            fill-rule="evenodd"
-            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-            clip-rule="evenodd"
+            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+            stroke-linecap="round"
+            stroke-linejoin="round"
           />
+          <path d="M12 11v4M10 13h4" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
     </div>
@@ -233,17 +218,21 @@ const toggleRootExpand = (event: Event) => {
             />
           </svg>
         </button>
-        <span v-else-if="!collapsed" class="w-4"></span>
+        <span v-else-if="!collapsed" class="w-4 mr-1"></span>
+        <!-- Updated Home icon - more subtle outlined style -->
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5 text-indigo-600"
+          class="h-5 w-5 text-indigo-500"
           :class="{ 'mr-2': !collapsed }"
-          viewBox="0 0 20 20"
-          fill="currentColor"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <path
-            d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"
-          />
+          <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
         <span v-if="!collapsed" class="text-gray-700 text-sm flex-grow">Home</span>
       </div>
@@ -323,36 +312,42 @@ const toggleRootExpand = (event: Event) => {
                 />
               </svg>
             </button>
-            <span v-else-if="!collapsed" class="w-4"></span>
+            <span v-else-if="!collapsed" class="w-4 mr-1"></span>
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-indigo-600"
+              class="h-5 w-5 text-indigo-500"
               :class="{ 'mr-2': !collapsed }"
-              viewBox="0 0 20 20"
-              fill="currentColor"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
-              <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
+
             <span v-if="!collapsed" class="text-gray-700 text-sm truncate flex-grow">{{
               node.name
             }}</span>
+
             <button
               v-if="!collapsed"
               @click.stop.prevent="openCreateModal(node._id, $event)"
-              class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
+              class="text-gray-400 hover:text-indigo-500 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
               title="Add subdirectory"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="h-3 w-3"
-                viewBox="0 0 20 20"
-                fill="currentColor"
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
               >
-                <path
-                  fill-rule="evenodd"
-                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                  clip-rule="evenodd"
-                />
+                <path d="M12 5v14M5 12h14" />
               </svg>
             </button>
           </div>
@@ -426,32 +421,42 @@ const toggleRootExpand = (event: Event) => {
                     />
                   </svg>
                 </button>
-                <span v-else class="w-4"></span>
+                <span v-else class="w-4 mr-1"></span>
+                <!-- Folder icon - replacing filled with outlined version -->
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 mr-2 text-indigo-600"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
+                  class="h-5 w-5 mr-2 text-indigo-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
                 >
-                  <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                  <path
+                    d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                  />
                 </svg>
+
                 <span class="text-gray-700 text-sm truncate flex-grow">{{ childNode.name }}</span>
+
                 <button
                   @click.stop.prevent="openCreateModal(childNode._id, $event)"
                   class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Add subdirectory"
                 >
+                  <!-- Plus + icon - updating to match other plus icons -->
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    class="h-3 w-3"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
                   >
-                    <path
-                      fill-rule="evenodd"
-                      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                      clip-rule="evenodd"
-                    />
+                    <path d="M12 5v14M5 12h14" />
                   </svg>
                 </button>
               </div>
@@ -500,42 +505,52 @@ const toggleRootExpand = (event: Event) => {
                       @click.stop.prevent="toggleExpand(grandchildNode, $event)"
                       class="mr-1 text-gray-500 focus:outline-none"
                     >
+                      <!-- Folder icon -->
                       <svg
                         v-if="!grandchildNode.isExpanded"
                         xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
+                        class="h-5 w-5 mr-2 text-indigo-500"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
                       >
                         <path
-                          fill-rule="evenodd"
-                          d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                          clip-rule="evenodd"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                         />
                       </svg>
                       <svg
                         v-else
                         xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
+                        class="h-5 w-5 mr-2 text-indigo-500"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
                       >
                         <path
-                          fill-rule="evenodd"
-                          d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                          clip-rule="evenodd"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                         />
                       </svg>
                     </button>
-                    <span v-else class="w-4"></span>
+                    <span v-else class="w-4 mr-1"></span>
+                    <!-- Folder icon - replacing filled with outlined version -->
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      class="h-5 w-5 mr-2 text-indigo-600"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
+                      class="h-5 w-5 mr-2 text-indigo-500"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
                     >
                       <path
-                        d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
+                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                       />
                     </svg>
                     <span class="text-gray-700 text-sm truncate flex-grow">{{
@@ -546,17 +561,18 @@ const toggleRootExpand = (event: Event) => {
                       class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
                       title="Add subdirectory"
                     >
+                      <!-- Plus + icon - updating to match other plus icons -->
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
+                        class="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
                       >
-                        <path
-                          fill-rule="evenodd"
-                          d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                          clip-rule="evenodd"
-                        />
+                        <path d="M12 5v14M5 12h14" />
                       </svg>
                     </button>
                   </div>
