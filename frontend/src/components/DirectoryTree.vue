@@ -154,7 +154,7 @@ const toggleRootExpand = (event: Event) => {
 
 <template>
   <div class="directory-tree">
-    <div class="mb-2">
+    <div class="mb-2 pt-4">
       <div
         class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
         :class="{ 'bg-indigo-100': currentDirectoryId === null, 'justify-center': collapsed }"
@@ -167,7 +167,7 @@ const toggleRootExpand = (event: Event) => {
             (directoryTree.length > 0 || (directoryDocuments.get(null)?.length ?? 0) > 0)
           "
           @click.stop.prevent="toggleRootExpand($event)"
-          class="mr-1 text-gray-500 focus:outline-none"
+          class="mr-2 text-gray-500 focus:outline-none"
         >
           <svg
             v-if="!isRootExpanded"
@@ -196,12 +196,12 @@ const toggleRootExpand = (event: Event) => {
             />
           </svg>
         </button>
-        <span v-else-if="!collapsed" class="w-4 mr-1"></span>
+        <span v-else-if="!collapsed" class="w-4 mr-2"></span>
         <!-- Updated Home icon - more subtle outlined style -->
         <svg
           xmlns="http://www.w3.org/2000/svg"
           class="h-5 w-5 text-indigo-500"
-          :class="{ 'mr-2': !collapsed }"
+          :class="{ 'mr-3': !collapsed }"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -281,7 +281,7 @@ const toggleRootExpand = (event: Event) => {
                   (node.children.length > 0 || (directoryDocuments.get(node._id)?.length ?? 0) > 0)
                 "
                 @click.stop.prevent="toggleExpand(node, $event)"
-                class="mr-1 text-gray-500 focus:outline-none"
+                class="mr-2 text-gray-500 focus:outline-none"
               >
                 <svg
                   v-if="!node.isExpanded"
@@ -310,11 +310,11 @@ const toggleRootExpand = (event: Event) => {
                   />
                 </svg>
               </button>
-              <span v-else-if="!collapsed" class="w-4 mr-1"></span>
+              <span v-else-if="!collapsed" class="w-4 mr-2"></span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 class="h-5 w-5 text-indigo-500"
-                :class="{ 'mr-2': !collapsed }"
+                :class="{ 'mr-3': !collapsed }"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -392,7 +392,7 @@ const toggleRootExpand = (event: Event) => {
                       (directoryDocuments.get(childNode._id)?.length ?? 0) > 0
                     "
                     @click.stop.prevent="toggleExpand(childNode, $event)"
-                    class="mr-1 text-gray-500 focus:outline-none"
+                    class="mr-2 text-gray-500 focus:outline-none"
                   >
                     <svg
                       v-if="!childNode.isExpanded"
@@ -421,11 +421,11 @@ const toggleRootExpand = (event: Event) => {
                       />
                     </svg>
                   </button>
-                  <span v-else class="w-4 mr-1"></span>
+                  <span v-else class="w-4 mr-2"></span>
                   <!-- Folder icon - replacing filled with outlined version -->
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    class="h-5 w-5 mr-2 text-indigo-500"
+                    class="h-5 w-5 mr-3 text-indigo-500"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -503,7 +503,7 @@ const toggleRootExpand = (event: Event) => {
                           (directoryDocuments.get(grandchildNode._id)?.length ?? 0) > 0
                         "
                         @click.stop.prevent="toggleExpand(grandchildNode, $event)"
-                        class="mr-1 text-gray-500 focus:outline-none"
+                        class="mr-2 text-gray-500 focus:outline-none"
                       >
                         <svg
                           v-if="!grandchildNode.isExpanded"
@@ -532,11 +532,11 @@ const toggleRootExpand = (event: Event) => {
                           />
                         </svg>
                       </button>
-                      <span v-else class="w-4 mr-1"></span>
+                      <span v-else class="w-4 mr-2"></span>
                       <!-- Folder icon - replacing filled with outlined version -->
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        class="h-5 w-5 mr-2 text-indigo-500"
+                        class="h-5 w-5 mr-3 text-indigo-500"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
@@ -655,5 +655,6 @@ const toggleRootExpand = (event: Event) => {
 <style scoped>
 .directory-tree {
   font-size: 0.875rem;
+  padding-top: 0.5rem;
 }
 </style>

@@ -8,7 +8,7 @@
 
       <div class="mb-8 flex justify-between items-center">
         <h1 class="text-2xl font-bold text-gray-800">
-          {{ currentDirectory ? currentDirectory.name : 'My Documents' }}
+          {{ currentDirectory ? currentDirectory.name : 'Home' }}
         </h1>
         <div class="flex space-x-4">
           <button
