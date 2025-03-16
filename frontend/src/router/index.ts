@@ -59,33 +59,14 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  // Auth checks (keep your existing code here)
-
-  // Add special handling for directory routes
-  if (to.name === 'home' || to.name === 'directory') {
+  // In router, fetch content but don't update URL
+  if (to.name === 'directory' && to.params.id) {
     const directoryStore = useDirectoryStore()
-
-    // Pre-fetch directories if not already loaded
-    if (directoryStore.directories.length === 0) {
-      await directoryStore.fetchAllDirectories()
-    }
-
-    // Clear directory initialization flag when changing routes
-    directoryStore.routeInitialized = false
-
-    // For 'directory' routes, extract path and ID
-    if (to.name === 'directory') {
-      const path = to.params.path as string
-      const id = to.params.id as string
-
-      // Wait for route initialization to complete
-      await directoryStore.initializeFromRoute(path, id)
-    } else if (to.name === 'home') {
-      // Explicitly initialize from root path
-      await directoryStore.initializeFromRoute('/')
-    }
+    await directoryStore.navigateToDirectory(to.params.id, { updateUrl: false, fetchContent: true })
+  } else if (to.name === 'home') {
+    const directoryStore = useDirectoryStore()
+    await directoryStore.navigateToDirectory(null, { updateUrl: false, fetchContent: true })
   }
-
   next()
 })
 

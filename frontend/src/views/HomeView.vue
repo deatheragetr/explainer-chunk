@@ -399,7 +399,8 @@ export default defineComponent({
     }
 
     const navigateToDirectory = (directoryId: string) => {
-      directoryStore.navigateToDirectory(directoryId)
+      // Only update URL, don't fetch content
+      directoryStore.navigateToDirectory(directoryId, { updateUrl: true, fetchContent: false })
     }
 
     const createDirectory = async () => {

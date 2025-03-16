@@ -96,33 +96,16 @@ const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
 }
 
 const navigateToDirectory = async (directoryId: string) => {
-  if (preventAutoNavigation.value) {
-    console.log('Preventing auto-navigation in tree during initialization')
-    return
-  }
-
   const directory = directoryStore.getDirectoryById(directoryId)
   if (directory) {
-    // Use router directly instead of the store function
-    const urlPath = directory.path.replace(/^\//, '')
-    router.push({
-      name: 'directory',
-      params: {
-        path: urlPath || 'root',
-        id: directoryId
-      }
-    })
+    // Only update URL, don't fetch content
+    await directoryStore.navigateToDirectory(directoryId, { updateUrl: true, fetchContent: false })
   }
 }
 
 const navigateToRoot = async () => {
-  if (preventAutoNavigation.value) {
-    console.log('Preventing auto-navigation to root during initialization')
-    return
-  }
-
-  // Use router directly
-  router.push({ name: 'home' })
+  // Only update URL, don't fetch content
+  await directoryStore.navigateToDirectory(null, { updateUrl: true, fetchContent: false })
 }
 
 const navigateToDocument = (document: LightweightDocument) => {

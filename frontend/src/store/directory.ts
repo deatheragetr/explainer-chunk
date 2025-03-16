@@ -110,6 +110,15 @@ export const useDirectoryStore = defineStore('directory', {
     async fetchDirectoryContents(directoryId: string | null = null) {
       this.isLoading = true
       this.error = null
+
+      if (
+        (directoryId === null && this.currentDirectory === null) ||
+        (this.currentDirectory && this.currentDirectory._id === directoryId)
+      ) {
+        console.log(`Already on directory ${directoryId || 'root'}, skipping fetch`)
+        return this.directoryContents
+      }
+
       try {
         const contents = await directoryService.getDirectoryContents(directoryId)
         this.directoryContents = contents
@@ -323,21 +332,21 @@ export const useDirectoryStore = defineStore('directory', {
       }
     },
 
-    async navigateToDirectory(directoryId: string | null, fromRoute: boolean = false) {
-      // If we're already on this directory, do nothing
-      if (this.currentDirectory?._id === directoryId && this.routeInitialized) {
-        return
-      }
-
+    async navigateToDirectory(
+      directoryId: string | null,
+      options = { updateUrl: true, fetchContent: true }
+    ) {
       this.isLoading = true
       this.error = null
 
       try {
-        // Fetch the directory contents
-        await this.fetchDirectoryContents(directoryId)
+        // Only fetch contents if specified
+        if (options.fetchContent) {
+          await this.fetchDirectoryContents(directoryId)
+        }
 
-        // Update URL ONLY if navigation didn't come from a route change
-        if (!fromRoute) {
+        // Only update URL if specified
+        if (options.updateUrl) {
           if (directoryId) {
             const directory = this.getDirectoryById(directoryId)
             if (directory) {
@@ -352,12 +361,8 @@ export const useDirectoryStore = defineStore('directory', {
               })
             }
           } else {
-            // Navigate to home for root directory
             router.push({ name: 'home', replace: true })
           }
-        } else {
-          // Mark that we've fully initialized from the route
-          this.routeInitialized = true
         }
       } catch (error: any) {
         this.error = error.message || 'Failed to navigate to directory'

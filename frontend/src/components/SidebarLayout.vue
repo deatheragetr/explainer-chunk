@@ -27,8 +27,8 @@ onMounted(async () => {
 })
 
 const navigateToHome = () => {
-  // Use replace:true to avoid adding to history
-  router.push({ name: 'home', replace: true })
+  // Use the router directly or use directory store with the new options
+  directoryStore.navigateToDirectory(null, { updateUrl: true, fetchContent: false })
 }
 
 const navigateToSettings = () => {
