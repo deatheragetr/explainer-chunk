@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router'
 import NavBar from '@/components/NavBar.vue'
+import SidebarLayout from '@/components/SidebarLayout.vue'
 import { computed, watch } from 'vue'
 import { useDocumentTitle } from '@/composables/useDocumentTitle'
 
@@ -8,9 +9,19 @@ const route = useRoute()
 const { resetDocument } = useDocumentTitle()
 
 const showNavBar = computed(() => {
-  // Add routes where you don't want to show the navbar
-  const routesWithoutNavBar = ['/auth']
-  return !routesWithoutNavBar.includes(route.path)
+  // Don't show navbar on auth pages
+  return !route.path.startsWith('/auth')
+})
+
+const useSidebar = computed(() => {
+  // Only show sidebar on the home page and document pages
+  // Explicitly exclude settings and auth pages
+  if (route.path === '/settings' || route.path.startsWith('/auth')) {
+    return false
+  }
+
+  // Only show sidebar on home and document pages
+  return route.path === '/' || route.path.includes('/uploads/')
 })
 
 // Watch for route changes to reset document title when not on a document page
@@ -28,9 +39,16 @@ watch(
 <template>
   <div class="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100">
     <NavBar v-if="showNavBar" />
+
     <div :class="{ 'pt-20': showNavBar }">
-      <!-- Increased padding-top from pt-16 to pt-20 -->
-      <RouterView :key="route.fullPath" />
+      <template v-if="useSidebar">
+        <SidebarLayout>
+          <RouterView :key="route.fullPath" />
+        </SidebarLayout>
+      </template>
+      <template v-else>
+        <RouterView :key="route.fullPath" />
+      </template>
     </div>
   </div>
 </template>

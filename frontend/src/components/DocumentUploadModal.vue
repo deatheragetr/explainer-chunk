@@ -39,6 +39,26 @@
                   Add Website or Document
                 </DialogTitle>
 
+                <!-- Add directory selection dropdown before the upload buttons -->
+                <div class="mb-4">
+                  <label
+                    for="directory-select"
+                    class="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Save to Folder
+                  </label>
+                  <select
+                    id="directory-select"
+                    v-model="selectedDirectoryId"
+                    class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    <option :value="null">Root (No Folder)</option>
+                    <option v-for="dir in directories" :key="dir._id" :value="dir._id">
+                      {{ dir.name }}
+                    </option>
+                  </select>
+                </div>
+
                 <!-- URL Input -->
                 <div class="mb-4">
                   <label for="url-input" class="block text-sm font-medium text-gray-700 mb-2"
@@ -127,7 +147,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, computed } from 'vue'
 
 import {
   Dialog as CustomDialog,
@@ -139,6 +159,7 @@ import {
 import { uploadLargeFile } from '@/utils/fileUpload'
 import api from '@/api/axios'
 import { UnsupportedFileTypeError } from '@/utils/textExtract'
+import { useDirectoryStore } from '@/store/directory'
 
 interface ImportProgress {
   status: string
@@ -186,9 +207,21 @@ export default defineComponent({
     const fileInput = ref<HTMLInputElement | null>(null)
     const fileName = ref('')
     const websocket = ref<WebSocket | null>(null)
+    const directoryStore = useDirectoryStore()
+    const selectedDirectoryId = ref<string | null>(null)
+
+    const directories = computed(() => {
+      return directoryStore.directories || []
+    })
+
+    const currentDirectory = computed(() => {
+      return directoryStore.currentDirectory
+    })
 
     const openModal = () => {
       isOpen.value = true
+      directoryStore.fetchAllDirectories()
+      selectedDirectoryId.value = currentDirectory.value?._id || null
     }
 
     const closeModal = () => {
@@ -291,13 +324,29 @@ export default defineComponent({
     }
 
     const uploadFile = async (file: File) => {
-      try {
-        isLoading.value = true
-        error.value = ''
-        importProgress.value = { status: 'Uploading', progress: 0, payload: {} }
-        const fileType = getFileType(file)
+      isLoading.value = true
+      error.value = ''
+      importProgress.value = { status: 'Uploading', progress: 0, payload: {} }
+      const fileType = getFileType(file)
 
-        const response: UploadResponse = await uploadLargeFile(file, fileType, importProgress)
+      try {
+        // Create a FormData object for the API call
+        const formData = new FormData()
+        formData.append('file', file)
+
+        // Add directory_id if selected
+        if (selectedDirectoryId.value) {
+          formData.append('directory_id', selectedDirectoryId.value)
+        }
+
+        // Use the standard concurrency parameter (4 is the default)
+        const response = await uploadLargeFile(
+          file,
+          fileType,
+          importProgress,
+          4,
+          selectedDirectoryId.value
+        )
 
         importProgress.value = { status: 'Complete', progress: 100, payload: response }
         const emitBody = { ...response, file: file }
@@ -322,19 +371,36 @@ export default defineComponent({
           error.value = ''
           importProgress.value = { status: 'Capturing website', progress: 0, payload: {} }
 
+          // Create request body with directory_id if selected
+          const importRequestBody: any = {}
+          if (selectedDirectoryId.value) {
+            importRequestBody.directory_id = selectedDirectoryId.value
+          }
+
           const importDocRes = await api.post<ImportDocumentUploadResponse>(
             '/document-uploads/imports',
-            {}
+            importRequestBody
           )
-
           connectWebSocket(importDocRes.data.id)
 
-          const captureRes = await api.post<WebsiteCaptureResponse>('/capture-website/', {
+          // Create capture request body with directory_id if selected
+          const captureRequestBody: any = {
             url: url.value,
             document_upload_id: importDocRes.data.id
-          })
+          }
+
+          if (selectedDirectoryId.value) {
+            captureRequestBody.directory_id = selectedDirectoryId.value
+          }
+
+          const captureRes = await api.post<WebsiteCaptureResponse>(
+            '/capture-website/',
+            captureRequestBody
+          )
 
           importProgress.value = { status: 'Complete', progress: 100, payload: captureRes.data }
+          // emit('document-loaded', captureRes.data) // TODO: Confirm we even need this?
+          // closeModal()
         } catch (e) {
           console.error('Error capturing website:', e)
           error.value = 'Failed to capture website. Please try again.'
@@ -388,7 +454,9 @@ export default defineComponent({
       handleFileUpload,
       onFileDrop,
       loadContent,
-      triggerFileInput
+      triggerFileInput,
+      selectedDirectoryId,
+      directories
     }
   }
 })

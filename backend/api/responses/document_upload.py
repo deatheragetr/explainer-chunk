@@ -22,6 +22,12 @@ class DocumentUploadResponse(BaseModel):
     note: Annotated[Optional[NoteResponse], "End User notes on the document"]
     custom_title: Annotated[Optional[str], "User-defined custom title for the document"]
     title: Annotated[str, "Display title based on precedence rules"]
+    directory_id: Annotated[
+        Optional[str], "ID of the directory this document belongs to"
+    ]
+    directory_path: Annotated[
+        Optional[str], "Path of the directory this document belongs to"
+    ]
 
 
 class DocumentRetrieveResponseForPage(DocumentUploadResponse):

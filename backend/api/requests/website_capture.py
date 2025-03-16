@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Annotated
+from typing import Annotated, Optional
 
 
 class WebsiteCaptureRequest(BaseModel):
@@ -7,6 +7,7 @@ class WebsiteCaptureRequest(BaseModel):
     document_upload_id: Annotated[
         str, "MongoDB ObjectId of document_upload to associate with capture"
     ]
+    directory_id: Optional[str] = None
     # TODO: Share mongodb id validation logic with other models
 
     @field_validator("url")

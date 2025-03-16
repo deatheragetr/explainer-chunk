@@ -107,7 +107,8 @@ export async function uploadLargeFile(
   file: File,
   fileType: string,
   importProgress: Ref<ImportProgress | null>,
-  concurrency: number = 4
+  concurrency: number = 4,
+  directoryId: string | null = null
 ): Promise<uploadLargeFileResponse> {
   const updateProgress = createProgressUpdater(importProgress)
 
@@ -154,13 +155,21 @@ export async function uploadLargeFile(
 
   updateProgress('finalizing', 70)
 
-  const results = await api.post('/document-uploads/', {
+  // Create the request body with directory_id if provided
+  const requestBody: any = {
     file_name: file.name,
     file_type: fileType,
     file_key: fileKey,
     extracted_text: result.text,
     extracted_metadata: result.metadata || {}
-  })
+  }
+
+  // Add directory_id if it exists
+  if (directoryId) {
+    requestBody.directory_id = directoryId
+  }
+
+  const results = await api.post('/document-uploads/', requestBody)
 
   updateProgress('completed', 100)
   console.log('Upload completed successfully')
