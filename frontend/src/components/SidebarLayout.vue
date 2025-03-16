@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import DirectoryTree from './DirectoryTree.vue'
 import { useDirectoryStore } from '@/store/directory'
 
 const directoryStore = useDirectoryStore()
 const router = useRouter()
+const route = useRoute()
 
 // Default to collapsed on mobile, expanded on desktop
 const isSidebarOpen = ref(window.innerWidth > 768)
@@ -14,19 +15,20 @@ const toggleSidebar = () => {
   isSidebarOpen.value = !isSidebarOpen.value
 }
 
+// This is the key fix - make the sidebar initialization a one-time operation
+// that doesn't respond to route changes or re-trigger navigation
 onMounted(async () => {
-  // Only fetch directories and navigate if we're on the home page
-  if (router.currentRoute.value.name === 'home') {
-    // Fetch all directories first
-    await directoryStore.fetchAllDirectories()
+  // Only fetch directories on the first mount - don't navigate yet
+  await directoryStore.fetchAllDirectories()
 
-    // Navigate to the root directory
-    await directoryStore.navigateToDirectory(null)
-  }
+  // Don't automatically navigate in the sidebar - let the route handlers do it
+  // This prevents the sidebar from overriding URL-based navigation
+  console.log('Sidebar mounted - directories loaded')
 })
 
 const navigateToHome = () => {
-  router.push('/')
+  // Use replace:true to avoid adding to history
+  router.push({ name: 'home', replace: true })
 }
 
 const navigateToSettings = () => {

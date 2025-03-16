@@ -256,14 +256,10 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onMounted, computed, watch, defineAsyncComponent } from 'vue'
+import { defineComponent, ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-// Import DirectoryBreadcrumb normally
+import DocumentUploadModal from '@/components/DocumentUploadModal.vue'
 import DirectoryBreadcrumb from '@/components/DirectoryBreadcrumb.vue'
-// Import DocumentUploadModal using defineAsyncComponent to avoid initialization issues
-const DocumentUploadModal = defineAsyncComponent(
-  () => import('@/components/DocumentUploadModal.vue')
-)
 import { useDirectoryStore } from '@/store/directory'
 import api from '@/api/axios'
 
@@ -290,9 +286,6 @@ export default defineComponent({
     const loading = ref(false)
     const hasMore = ref(false)
     const nextCursor = ref<string | null>(null)
-    const isResetInProgress = ref(false)
-    const initialLoadCompleted = ref(false)
-
     const router = useRouter()
     const route = useRoute()
     const directoryStore = useDirectoryStore()
@@ -415,56 +408,47 @@ export default defineComponent({
       }
     }
 
-    onMounted(async () => {
-      console.log('HomeView mounted, route:', route.fullPath)
-      loading.value = true
-
-      try {
-        // Wait for directory store initialization if needed
-        if (directoryStore.directories.length === 0) {
-          await directoryStore.fetchAllDirectories()
-        }
-
-        // Check what route we're on and explicitly handle it
-        if (route.name === 'home') {
-          console.log('On home route - explicitly setting root directory')
-          // For root route, forcibly clear any existing selection
-          directoryStore.currentDirectory = null
-          directoryStore.breadcrumbs = [{ _id: null, name: 'Home', path: '/' }]
-
-          // Fetch root contents
-          await directoryStore.fetchDirectoryContents(null)
-        } else if (route.name === 'directory' && route.params.id) {
-          console.log('On directory route with ID:', route.params.id)
-          const directoryId = route.params.id as string
-
-          // Fetch directory contents for this specific ID
-          await directoryStore.fetchDirectoryContents(directoryId)
-        }
-
-        // Now fetch documents for whatever directory is current
+    // Watch for changes in the current directory and reload documents
+    watch(
+      () => directoryStore.currentDirectory,
+      (newDirectory) => {
+        console.log('Directory changed:', newDirectory ? newDirectory.name : 'Root')
+        // Reset pagination and fetch documents for the new directory
         nextCursor.value = null
-        await fetchDocuments()
+        fetchDocuments()
+      }
+    )
 
-        // Mark initialization complete
-        initialLoadCompleted.value = true
+    onMounted(async () => {
+      loading.value = true
+      try {
+        // First, fetch all directories
+        await directoryStore.fetchAllDirectories()
+
+        // Check if we're navigating to a specific directory from the URL
+        if (route.name === 'directory' && route.params.id) {
+          const directoryId = route.params.id as string
+          const path = route.params.path as string
+
+          console.log(`Navigating to directory from URL: path=${path}, id=${directoryId}`)
+
+          // Use the navigateToPath method which handles both path and ID
+          await directoryStore.navigateToPath(path, directoryId)
+        } else {
+          // Otherwise navigate to the root directory
+          await directoryStore.navigateToDirectory(null)
+        }
+
+        // Ensure directory navigation is complete before fetching documents
+        nextCursor.value = null
+
+        // Documents will be fetched by the watcher on currentDirectory
       } catch (error) {
         console.error('Error initializing view:', error)
       } finally {
         loading.value = false
       }
     })
-
-    watch(
-      () => directoryStore.currentDirectory,
-      (newDirectory, oldDirectory) => {
-        if (initialLoadCompleted.value && newDirectory !== oldDirectory) {
-          console.log('Directory changed in store:', newDirectory?.name ?? 'Root')
-          nextCursor.value = null
-          fetchDocuments()
-        }
-      }
-    )
 
     return {
       documents,

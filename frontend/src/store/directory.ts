@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import directoryService from '@/api/directoryService'
 import type { Directory, DirectoryContents, DirectoryTreeNode } from '@/types/directory'
 import { buildDirectoryTree, buildBreadcrumbs } from '@/types/directory'
+import router from '@/router'
 
 interface DirectoryState {
   directories: Directory[]
@@ -11,6 +12,8 @@ interface DirectoryState {
   breadcrumbs: { _id: string | null; name: string; path: string }[]
   isLoading: boolean
   error: string | null
+  isNavigating: boolean
+  routeInitialized: boolean
 }
 
 export const useDirectoryStore = defineStore('directory', {
@@ -21,7 +24,9 @@ export const useDirectoryStore = defineStore('directory', {
     directoryTree: [],
     breadcrumbs: [{ _id: null, name: 'Home', path: '/' }],
     isLoading: false,
-    error: null
+    error: null,
+    isNavigating: false,
+    routeInitialized: false
   }),
 
   getters: {
@@ -308,41 +313,144 @@ export const useDirectoryStore = defineStore('directory', {
     },
 
     async moveDocument(documentId: string, directoryId: string | null = null) {
-      this.isLoading = true
-      this.error = null
       try {
-        const result = await directoryService.moveDocument(documentId, directoryId)
-
+        await directoryService.moveDocument(documentId, directoryId)
         // Refresh current directory contents
-        if (this.currentDirectory) {
-          await this.fetchDirectoryContents(this.currentDirectory._id)
-        } else {
-          await this.fetchDirectoryContents(null)
-        }
-
-        return result
+        await this.fetchDirectoryContents(this.currentDirectory?._id || null)
       } catch (error: any) {
         this.error = error.message || 'Failed to move document'
-        console.error('Error moving document:', error)
         throw error
+      }
+    },
+
+    async navigateToDirectory(directoryId: string | null, fromRoute: boolean = false) {
+      // If we're already on this directory, do nothing
+      if (this.currentDirectory?._id === directoryId && this.routeInitialized) {
+        return
+      }
+
+      this.isLoading = true
+      this.error = null
+
+      try {
+        // Fetch the directory contents
+        await this.fetchDirectoryContents(directoryId)
+
+        // Update URL ONLY if navigation didn't come from a route change
+        if (!fromRoute) {
+          if (directoryId) {
+            const directory = this.getDirectoryById(directoryId)
+            if (directory) {
+              const urlPath = directory.path.replace(/^\//, '')
+              router.push({
+                name: 'directory',
+                params: {
+                  path: urlPath || 'root',
+                  id: directoryId
+                },
+                replace: true
+              })
+            }
+          } else {
+            // Navigate to home for root directory
+            router.push({ name: 'home', replace: true })
+          }
+        } else {
+          // Mark that we've fully initialized from the route
+          this.routeInitialized = true
+        }
+      } catch (error: any) {
+        this.error = error.message || 'Failed to navigate to directory'
+        console.error('Error navigating to directory:', error)
       } finally {
         this.isLoading = false
       }
     },
 
-    async navigateToDirectory(directoryId: string | null) {
-      await this.fetchDirectoryContents(directoryId)
-    },
+    // Add a new method specifically for route-initiated navigation
+    async initializeFromRoute(path: string, id: string | null = null) {
+      this.routeInitialized = false
 
-    // This method is no longer needed since we're using navigateToDirectory directly
-    // and not using URL paths for directory navigation
-    async navigateToPath(path: string) {
-      if (path === '/' || path === '') {
-        return this.navigateToDirectory(null)
+      if (path === '/' || path === '' || !path) {
+        // Clear state for root
+        this.currentDirectory = null
+        this.breadcrumbs = [{ _id: null, name: 'Home', path: '/' }]
+
+        // Fetch root contents with fromRoute=true flag
+        await this.navigateToDirectory(null, true)
+        return
       }
 
-      // For backward compatibility, just navigate to root
-      return this.navigateToDirectory(null)
+      if (id) {
+        // Use the ID directly if provided (fromRoute=true)
+        await this.navigateToDirectory(id, true)
+      } else {
+        // Find by path as fallback
+        const formattedPath = path.startsWith('/') ? path : `/${path}`
+        const directory = this.directories.find((dir) => dir.path === formattedPath)
+
+        if (directory) {
+          await this.navigateToDirectory(directory._id, true)
+        } else {
+          // Fallback to root with warning
+          console.warn(`Directory with path ${formattedPath} not found, navigating to root`)
+          await this.navigateToDirectory(null, true)
+        }
+      }
+    },
+
+    async resetToRoot() {
+      // Clear all state first
+      this.currentDirectory = null
+      this.breadcrumbs = [{ _id: null, name: 'Home', path: '/' }]
+
+      // Force a stop to any pending navigations
+      this.isNavigating = false
+
+      // Then explicitly fetch root contents
+      this.isLoading = true
+      try {
+        // Clear directory contents first to avoid flashing incorrect data
+        this.directoryContents = null
+        await this.fetchDirectoryContents(null)
+      } catch (error: any) {
+        console.error('Error resetting to root:', error)
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    // Updated to handle URL-based navigation
+    async navigateToPath(path: string, id: string | null = null) {
+      this.isLoading = true
+      this.error = null
+      try {
+        if (path === '/' || path === '' || path === 'root') {
+          return this.navigateToDirectory(null)
+        }
+
+        // If we have an ID, use it directly
+        if (id) {
+          return this.navigateToDirectory(id)
+        }
+
+        // Otherwise, try to find the directory by path
+        const directory = this.getDirectoryByPath('/' + path)
+        if (directory) {
+          return this.navigateToDirectory(directory._id)
+        }
+
+        // If directory not found, navigate to root
+        console.warn(`Directory with path /${path} not found, navigating to root`)
+        return this.navigateToDirectory(null)
+      } catch (error: any) {
+        this.error = error.message || 'Failed to navigate to path'
+        console.error('Error navigating to path:', error)
+        // Fall back to root directory
+        return this.navigateToDirectory(null)
+      } finally {
+        this.isLoading = false
+      }
     }
   }
 })

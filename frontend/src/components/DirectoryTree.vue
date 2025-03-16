@@ -11,6 +11,8 @@ const props = defineProps({
   }
 })
 
+const preventAutoNavigation = ref(true)
+
 const directoryStore = useDirectoryStore()
 const router = useRouter()
 
@@ -68,25 +70,16 @@ const prefetchDirectoryContents = async () => {
   }
 }
 
-// Call prefetch on component mount
 onMounted(async () => {
-  // Make sure we have all directories
+  // Only load the tree structure - don't navigate
   if (directoryTree.value.length === 0) {
     await directoryStore.fetchAllDirectories()
   }
 
-  // Prefetch contents for all directories
-  await prefetchDirectoryContents()
-
-  // Ensure the current directory is properly set
-  const currentId = directoryStore.getCurrentDirectoryId
-  if (currentId) {
-    // If we have a current directory, make sure its contents are loaded
-    await fetchDirectoryContents(currentId)
-  } else {
-    // Otherwise, ensure root contents are loaded
-    await fetchDirectoryContents(null)
-  }
+  // Wait a short period then allow auto-navigation for future tree interactions
+  setTimeout(() => {
+    preventAutoNavigation.value = false
+  }, 500)
 })
 
 const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
@@ -103,20 +96,33 @@ const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
 }
 
 const navigateToDirectory = async (directoryId: string) => {
+  if (preventAutoNavigation.value) {
+    console.log('Preventing auto-navigation in tree during initialization')
+    return
+  }
+
   const directory = directoryStore.getDirectoryById(directoryId)
   if (directory) {
-    // First navigate to the directory in the store
-    await directoryStore.navigateToDirectory(directoryId)
-    // Then update the URL without triggering a full page reload
-    await router.push({ name: 'home', replace: true })
+    // Use router directly instead of the store function
+    const urlPath = directory.path.replace(/^\//, '')
+    router.push({
+      name: 'directory',
+      params: {
+        path: urlPath || 'root',
+        id: directoryId
+      }
+    })
   }
 }
 
 const navigateToRoot = async () => {
-  // First navigate to the root directory in the store
-  await directoryStore.navigateToDirectory(null)
-  // Then update the URL without triggering a full page reload
-  await router.push({ name: 'home', replace: true })
+  if (preventAutoNavigation.value) {
+    console.log('Preventing auto-navigation to root during initialization')
+    return
+  }
+
+  // Use router directly
+  router.push({ name: 'home' })
 }
 
 const navigateToDocument = (document: LightweightDocument) => {
