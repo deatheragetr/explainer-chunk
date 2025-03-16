@@ -20,8 +20,10 @@ const useSidebar = computed(() => {
     return false
   }
 
-  // Only show sidebar on home and document pages
-  return route.path === '/' || route.path.includes('/uploads/')
+  // Only show sidebar on home, directory, and document pages
+  return (
+    route.path === '/' || route.path.includes('/uploads/') || route.path.includes('/directories/')
+  )
 })
 
 // Watch for route changes to reset document title when not on a document page
