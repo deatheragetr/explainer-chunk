@@ -1,3 +1,4 @@
+// src/composables/useAuth.ts
 import { computed, type ComputedRef } from 'vue'
 import { useStore, Store } from 'vuex'
 import { useRouter } from 'vue-router'
@@ -12,8 +13,22 @@ export function useAuth() {
 
   const login = async (email: string, password: string): Promise<void> => {
     try {
+      console.log('Attempting login...')
+
+      // Capture the redirect URL before login (it might be lost during store operation)
+      const redirectUrl = router.currentRoute.value.query.redirect as string
+      console.log('Stored redirect URL before login:', redirectUrl)
+
       await store.dispatch('login', { email, password })
-      router.push('/')
+
+      // Check if we need to redirect after successful login
+      if (redirectUrl) {
+        console.log('Login successful, redirecting to:', redirectUrl)
+        router.push(redirectUrl)
+      } else {
+        console.log('Login successful, no redirect found, going to home page')
+        router.push('/')
+      }
     } catch (error) {
       console.error('Login failed', error)
       throw error
@@ -70,7 +85,7 @@ export function useAuth() {
       try {
         await store.dispatch('refreshToken')
       } catch (error) {
-        router.push('/login')
+        router.push('/auth')
       }
     }
   }

@@ -342,8 +342,13 @@ export default defineComponent({
         console.log('Fetching documents with params:', params)
 
         const response = await api.get('/document-uploads', { params })
+        console.log('API response received:', response.status)
 
-        if (nextCursor.value) {
+        // CRITICAL FIX: Handle case where documents might be null or undefined
+        if (!response.data.documents) {
+          console.warn('No documents property in response:', response.data)
+          documents.value = []
+        } else if (nextCursor.value) {
           // Append to existing documents if we're paginating
           documents.value = [...documents.value, ...response.data.documents]
         } else {
@@ -401,6 +406,10 @@ export default defineComponent({
     const navigateToDirectory = (directoryId: string) => {
       // Only update URL, don't fetch content
       directoryStore.navigateToDirectory(directoryId, { updateUrl: true, fetchContent: false })
+
+      // CRITICAL FIX: Explicitly fetch documents after navigation
+      nextCursor.value = null
+      fetchDocuments()
     }
 
     const createDirectory = async () => {
@@ -456,6 +465,17 @@ export default defineComponent({
       }
     })
 
+    // CRITICAL FIX: Directly call fetchDocuments when the route changes
+    watch(
+      () => route.fullPath,
+      async (newPath) => {
+        console.log('Route changed, fetching documents for:', newPath)
+        nextCursor.value = null
+        await fetchDocuments()
+      },
+      { immediate: true } // This ensures it runs immediately on component creation
+    )
+
     watch(
       () => directoryStore.currentDirectory,
       (newDirectory, oldDirectory) => {
@@ -464,8 +484,15 @@ export default defineComponent({
           nextCursor.value = null
           fetchDocuments()
         }
-      }
+      },
+      { deep: true } // Add deep watching to detect all changes
     )
+
+    // CRITICAL FIX: Call fetchDocuments immediately
+    // This ensures documents are loaded even if the router hooks don't fire
+    setTimeout(() => {
+      fetchDocuments()
+    }, 100)
 
     return {
       documents,

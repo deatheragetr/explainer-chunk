@@ -217,7 +217,7 @@ import { useToast } from 'vue-toastification'
 import AnimatedText from '@/components/AnimatedText.vue'
 import { useAuth } from '@/composables/useAuth'
 import api from '@/api/axios'
-
+import router from '@/router'
 const toast = useToast()
 
 const isLogin = ref(true)
@@ -265,8 +265,34 @@ const handleSubmit = async () => {
 }
 
 const handleLogin = async () => {
-  // If login successful, user will be redirected by the useAuth composable
-  await login(email.value, password.value)
+  try {
+    // Log the current URL to see if redirect parameter exists
+    console.log('Login form submitted, current URL:', window.location.href)
+
+    // Explicitly extract the redirect URL
+    const urlParams = new URLSearchParams(window.location.search)
+    const redirectUrl = urlParams.get('redirect')
+    console.log('Extracted redirect URL from query params:', redirectUrl)
+
+    // The login function in useAuth will handle redirects based on query parameters
+    await login(email.value, password.value)
+
+    // If login was successful but useAuth didn't redirect (for some reason),
+    // handle it here as a fallback
+    if (redirectUrl && !redirectUrl.includes('/auth')) {
+      console.log('Fallback redirect after successful login to:', redirectUrl)
+      router.push(redirectUrl)
+    } else if (!redirectUrl) {
+      console.log('No redirect URL found, fallback to home page')
+      router.push('/')
+    }
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      toast.error(error.response.data.detail || 'Login failed. Please check your credentials.')
+    } else {
+      toast.error('An unexpected error occurred. Please try again.')
+    }
+  }
 }
 
 const register = async () => {
