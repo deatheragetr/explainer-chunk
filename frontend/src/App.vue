@@ -1,9 +1,11 @@
+// src/App.vue
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router'
 import NavBar from '@/components/NavBar.vue'
 import SidebarLayout from '@/components/SidebarLayout.vue'
-import { computed, watch } from 'vue'
+import { computed, watch, onMounted } from 'vue'
 import { useDocumentTitle } from '@/composables/useDocumentTitle'
+import store from '@/store/auth'
 
 const route = useRoute()
 const { resetDocument } = useDocumentTitle()
@@ -20,8 +22,10 @@ const useSidebar = computed(() => {
     return false
   }
 
-  // Only show sidebar on home and document pages
-  return route.path === '/' || route.path.includes('/uploads/')
+  // Only show sidebar on home, directory, and document pages
+  return (
+    route.path === '/' || route.path.includes('/uploads/') || route.path.includes('/directories/')
+  )
 })
 
 // Watch for route changes to reset document title when not on a document page
@@ -34,6 +38,11 @@ watch(
     }
   }
 )
+
+// Perform initial authentication check when app loads
+onMounted(async () => {
+  await store.dispatch('checkAuth')
+})
 </script>
 
 <template>

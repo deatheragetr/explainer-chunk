@@ -7,7 +7,8 @@ const directoryStore = useDirectoryStore()
 const breadcrumbs = computed(() => directoryStore.breadcrumbs)
 
 const navigateTo = async (directoryId: string | null) => {
-  await directoryStore.navigateToDirectory(directoryId)
+  // Only update URL, don't fetch content
+  await directoryStore.navigateToDirectory(directoryId, { updateUrl: true, fetchContent: false })
 }
 </script>
 

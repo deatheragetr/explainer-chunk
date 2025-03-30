@@ -32,14 +32,21 @@ const dropTargetId = ref<string | null>(null)
 const loadDirectoryContents = async () => {
   try {
     const path = (route.params.path as string) || ''
-    if (path) {
+    const id = (route.params.id as string) || null
+
+    if (path && id) {
+      // If we have both path and ID, use the navigateToPath method with both parameters
+      await directoryStore.navigateToPath(path, id)
+    } else if (path) {
+      // If we only have a path, use the navigateToPath method
       await directoryStore.navigateToPath(path)
     } else {
+      // Otherwise, navigate to the root directory
       await directoryStore.navigateToDirectory(null)
     }
   } catch (error: any) {
     toast.error(error.message || 'Failed to load directory')
-    router.push({ name: 'directory', params: { path: '' } })
+    router.push({ name: 'home' })
   }
 }
 
@@ -109,11 +116,7 @@ const deleteDirectory = async () => {
 
 // Navigate to directory
 const navigateToDirectory = (dirId: string) => {
-  const directory = directoryStore.getDirectoryById(dirId)
-  if (directory) {
-    const path = directory.path.substring(1) // Remove leading slash
-    router.push({ name: 'directory', params: { path } })
-  }
+  directoryStore.navigateToDirectory(dirId)
 }
 
 // Navigate to document

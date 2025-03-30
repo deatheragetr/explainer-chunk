@@ -79,11 +79,16 @@ import {
   onUnmounted,
   provide,
   nextTick,
-  watch
+  watch,
+  defineAsyncComponent
 } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDocumentTitle } from '@/composables/useDocumentTitle'
-import DocumentUploadModal from './DocumentUploadModal.vue'
+// import DocumentUploadModal from './DocumentUploadModal.vue'
+// import DocumentUploadModal from '@/components/DocumentUploadModal.vue'
+const DocumentUploadModal = defineAsyncComponent(
+  () => import('@/components/DocumentUploadModal.vue')
+)
 import SummaryAI from '@/components/SummaryAI.vue'
 import HighlightExplain from './HighlightExplain.vue'
 import ChatSection from './ChatSection.vue'

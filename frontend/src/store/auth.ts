@@ -1,6 +1,7 @@
+// src/store/auth.ts
 import { createStore, type Commit } from 'vuex'
 import axios, { type AxiosInstance } from 'axios'
-import api from '@/api/axios'
+import router from '@/router'
 
 // Plain API to avoid infinite access token refresh loops
 const plainApi: AxiosInstance = axios.create({
@@ -25,8 +26,8 @@ export interface AuthState {
 export default createStore<AuthState>({
   state: {
     user: null,
-    accessToken: null,
-    isLoggedIn: false,
+    accessToken: localStorage.getItem('accessToken') || null,
+    isLoggedIn: localStorage.getItem('isLoggedIn') === 'true',
     initialCheckDone: false
   },
   getters: {
@@ -38,6 +39,7 @@ export default createStore<AuthState>({
     },
     setAccessToken(state: AuthState, token: string) {
       state.accessToken = token
+      localStorage.setItem('accessToken', token)
     },
     setIsLoggedIn(state: AuthState, value: boolean) {
       state.isLoggedIn = value
@@ -51,6 +53,7 @@ export default createStore<AuthState>({
       state.accessToken = null
       state.isLoggedIn = false
       localStorage.removeItem('isLoggedIn')
+      localStorage.removeItem('accessToken')
     }
   },
   actions: {
@@ -62,7 +65,7 @@ export default createStore<AuthState>({
       formData.append('username', email)
       formData.append('password', password)
 
-      const response = await api.post<{ user: User; access_token: string }>(
+      const response = await plainApi.post<{ user: User; access_token: string }>(
         '/auth/login',
         formData,
         {
@@ -72,21 +75,45 @@ export default createStore<AuthState>({
           withCredentials: true
         }
       )
+
       commit('setUser', response.data.user)
       commit('setAccessToken', response.data.access_token)
       commit('setIsLoggedIn', true)
+
+      // Don't handle redirects here - let the useAuth composable handle it
+      // This prevents multiple components trying to handle the redirect
+      console.log('Login successful - return data to caller to handle redirect')
+
+      return response.data
     },
+
     async logout({ commit }: { commit: Commit }) {
-      await api.post('/auth/logout', {}, { withCredentials: true })
-      commit('clearUserData')
+      try {
+        await plainApi.post('/auth/logout', {}, { withCredentials: true })
+      } catch (error) {
+        console.error('Error during logout:', error)
+      } finally {
+        // Always clear user data, even if the API call fails
+        commit('clearUserData')
+        router.push('/auth')
+      }
     },
+
     async logoutAll({ commit }: { commit: Commit }) {
-      await api.post('/auth/logout-all', {}, { withCredentials: true })
-      commit('clearUserData')
+      try {
+        await plainApi.post('/auth/logout-all', {}, { withCredentials: true })
+      } catch (error) {
+        console.error('Error during logout-all:', error)
+      } finally {
+        // Always clear user data, even if the API call fails
+        commit('clearUserData')
+        router.push('/auth')
+      }
     },
+
     async refreshToken({ commit }: { commit: Commit }): Promise<string> {
       try {
-        // Critical:  Must use "plainAPI", not the imported api with refresh interceptors, which can cause an infinite loop
+        // Critical: Must use "plainAPI", not the imported api with refresh interceptors, which can cause an infinite loop
         const response = await plainApi.post<{ user: User; access_token: string }>(
           '/auth/refresh',
           {},
@@ -101,11 +128,17 @@ export default createStore<AuthState>({
         throw error
       }
     },
+
+    // This action is called directly from axios.ts when we need to clear auth state
+    clearUserData({ commit }: { commit: Commit }) {
+      commit('clearUserData')
+    },
+
     async changePassword(
       { commit }: { commit: Commit },
       { current_password, new_password }: { current_password: string; new_password: string }
     ): Promise<void> {
-      const response = await api.post('/auth/change-password', {
+      const response = await plainApi.post('/auth/change-password', {
         current_password,
         new_password
       })
@@ -113,24 +146,51 @@ export default createStore<AuthState>({
       commit('setAccessToken', response.data.access_token)
       commit('setIsLoggedIn', true)
     },
+
     async updateEmail(
       { commit }: { commit: Commit },
       { newEmail }: { newEmail: string }
     ): Promise<void> {
-      const response = await api.put('/auth/users/me/email', { email: newEmail })
+      const response = await plainApi.put('/auth/users/me/email', { email: newEmail })
       commit('setUser', response.data.user)
       commit('setAccessToken', response.data.access_token)
       commit('setIsLoggedIn', true)
     },
+
     async checkAuth({ commit, dispatch }: { commit: Commit; dispatch: any }) {
       const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true'
+
       if (isLoggedIn) {
         try {
           await dispatch('refreshToken')
         } catch (error) {
+          console.log('Failed to refresh token during initial auth check')
           commit('clearUserData')
+
+          // If on a protected route, redirect to login
+          const currentRoute = router.currentRoute.value
+          if (currentRoute.meta.requiresAuth) {
+            console.log('On protected route without auth, redirecting to login')
+
+            // Clean the redirect path
+            const destinationPath = currentRoute.fullPath.split('?redirect=')[0]
+            console.log('Original path for redirect:', destinationPath)
+
+            // Only add redirect param if not already on auth page
+            if (!destinationPath.includes('/auth')) {
+              console.log('Adding redirect parameter to auth redirect')
+              router.push({
+                path: '/auth',
+                query: { redirect: destinationPath }
+              })
+            } else {
+              console.log('Path includes auth, redirecting without parameters')
+              router.push({ path: '/auth' })
+            }
+          }
         }
       }
+
       commit('setInitialCheckDone', true)
     }
   }

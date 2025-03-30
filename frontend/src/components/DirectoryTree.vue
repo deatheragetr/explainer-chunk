@@ -11,6 +11,8 @@ const props = defineProps({
   }
 })
 
+const preventAutoNavigation = ref(true)
+
 const directoryStore = useDirectoryStore()
 const router = useRouter()
 
@@ -50,43 +52,16 @@ const fetchDirectoryContents = async (directoryId: string | null) => {
   }
 }
 
-// Prefetch contents for all directories in the tree
-const prefetchDirectoryContents = async () => {
-  // First fetch root contents
-  await fetchDirectoryContents(null)
-
-  // Then fetch for all directories in the tree
-  const fetchForNode = async (node: DirectoryTreeNode) => {
-    await fetchDirectoryContents(node._id)
-    for (const child of node.children) {
-      await fetchForNode(child)
-    }
-  }
-
-  for (const node of directoryTree.value) {
-    await fetchForNode(node)
-  }
-}
-
-// Call prefetch on component mount
 onMounted(async () => {
-  // Make sure we have all directories
+  // Only load the tree structure - don't navigate
   if (directoryTree.value.length === 0) {
     await directoryStore.fetchAllDirectories()
   }
 
-  // Prefetch contents for all directories
-  await prefetchDirectoryContents()
-
-  // Ensure the current directory is properly set
-  const currentId = directoryStore.getCurrentDirectoryId
-  if (currentId) {
-    // If we have a current directory, make sure its contents are loaded
-    await fetchDirectoryContents(currentId)
-  } else {
-    // Otherwise, ensure root contents are loaded
-    await fetchDirectoryContents(null)
-  }
+  // Wait a short period then allow auto-navigation for future tree interactions
+  setTimeout(() => {
+    preventAutoNavigation.value = false
+  }, 500)
 })
 
 const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
@@ -105,18 +80,14 @@ const toggleExpand = async (node: DirectoryTreeNode, event: Event) => {
 const navigateToDirectory = async (directoryId: string) => {
   const directory = directoryStore.getDirectoryById(directoryId)
   if (directory) {
-    // First navigate to the directory in the store
-    await directoryStore.navigateToDirectory(directoryId)
-    // Then update the URL without triggering a full page reload
-    await router.push({ name: 'home', replace: true })
+    // Only update URL, don't fetch content
+    await directoryStore.navigateToDirectory(directoryId, { updateUrl: true, fetchContent: false })
   }
 }
 
 const navigateToRoot = async () => {
-  // First navigate to the root directory in the store
-  await directoryStore.navigateToDirectory(null)
-  // Then update the URL without triggering a full page reload
-  await router.push({ name: 'home', replace: true })
+  // Only update URL, don't fetch content
+  await directoryStore.navigateToDirectory(null, { updateUrl: true, fetchContent: false })
 }
 
 const navigateToDocument = (document: LightweightDocument) => {
@@ -183,29 +154,7 @@ const toggleRootExpand = (event: Event) => {
 
 <template>
   <div class="directory-tree">
-    <div v-if="!collapsed" class="flex justify-between items-center mb-3">
-      <h3 class="text-sm font-semibold text-gray-700">Directories</h3>
-      <button
-        @click.stop.prevent="openCreateModal(null, $event)"
-        class="text-indigo-600 hover:text-indigo-800 focus:outline-none"
-        title="Add root directory"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-4 w-4"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-            clip-rule="evenodd"
-          />
-        </svg>
-      </button>
-    </div>
-
-    <div class="mb-2">
+    <div class="mb-2 pt-4">
       <div
         class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
         :class="{ 'bg-indigo-100': currentDirectoryId === null, 'justify-center': collapsed }"
@@ -213,9 +162,12 @@ const toggleRootExpand = (event: Event) => {
         @dblclick.stop="navigateToRoot"
       >
         <button
-          v-if="!collapsed && (directoryDocuments.get(null)?.length ?? 0) > 0"
+          v-if="
+            !collapsed &&
+            (directoryTree.length > 0 || (directoryDocuments.get(null)?.length ?? 0) > 0)
+          "
           @click.stop.prevent="toggleRootExpand($event)"
-          class="mr-1 text-gray-500 focus:outline-none"
+          class="mr-2 text-gray-500 focus:outline-none"
         >
           <svg
             v-if="!isRootExpanded"
@@ -244,23 +196,49 @@ const toggleRootExpand = (event: Event) => {
             />
           </svg>
         </button>
-        <span v-else-if="!collapsed" class="w-4"></span>
+        <span v-else-if="!collapsed" class="w-4 mr-2"></span>
+        <!-- Updated Home icon - more subtle outlined style -->
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5 text-indigo-600"
-          :class="{ 'mr-2': !collapsed }"
-          viewBox="0 0 20 20"
-          fill="currentColor"
+          class="h-5 w-5 text-indigo-500"
+          :class="{ 'mr-3': !collapsed }"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <path
-            d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"
-          />
+          <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
         <span v-if="!collapsed" class="text-gray-700 text-sm flex-grow">Home</span>
+
+        <!-- Adding hover-activated plus icon to Home/Root directory -->
+        <button
+          v-if="!collapsed"
+          @click.stop.prevent="openCreateModal(null, $event)"
+          class="text-gray-400 hover:text-indigo-500 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Add subdirectory"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
       </div>
 
-      <!-- Root level documents -->
-      <div v-if="!collapsed && isRootExpanded" class="ml-5 mt-1">
+      <!-- Root level contents - now includes both documents and directories -->
+      <div v-if="!collapsed && isRootExpanded" class="pl-5 mt-1">
+        <!-- Root level documents -->
         <div
           v-for="doc in directoryDocuments.get(null) || []"
           :key="doc.id"
@@ -283,332 +261,355 @@ const toggleRootExpand = (event: Event) => {
           </svg>
           <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
         </div>
-      </div>
-    </div>
 
-    <div class="directory-nodes">
-      <template v-for="node in directoryTree" :key="node._id">
-        <div class="directory-node">
-          <!-- Directory header -->
-          <div
-            class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
-            :class="{
-              'bg-indigo-100': currentDirectoryId === node._id,
-              'justify-center': collapsed
-            }"
-            @click.stop="toggleExpand(node, $event)"
-            @dblclick.stop="navigateToDirectory(node._id)"
-          >
-            <button
-              v-if="
-                !collapsed &&
-                (node.children.length > 0 || (directoryDocuments.get(node._id)?.length ?? 0) > 0)
-              "
-              @click.stop.prevent="toggleExpand(node, $event)"
-              class="mr-1 text-gray-500 focus:outline-none"
-            >
-              <svg
-                v-if="!node.isExpanded"
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-3 w-3"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-3 w-3"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </button>
-            <span v-else-if="!collapsed" class="w-4"></span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-indigo-600"
-              :class="{ 'mr-2': !collapsed }"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-            </svg>
-            <span v-if="!collapsed" class="text-gray-700 text-sm truncate flex-grow">{{
-              node.name
-            }}</span>
-            <button
-              v-if="!collapsed"
-              @click.stop.prevent="openCreateModal(node._id, $event)"
-              class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Add subdirectory"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-3 w-3"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Directory contents (when expanded) -->
-          <div v-if="!collapsed && node.isExpanded" class="pl-5 mt-1">
-            <!-- Documents in this directory -->
+        <!-- Moving all directories under Home/Root -->
+        <template v-for="node in directoryTree" :key="node._id">
+          <div class="directory-node">
+            <!-- Directory header -->
             <div
-              v-for="doc in directoryDocuments.get(node._id) || []"
-              :key="doc.id"
-              class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-              @click.stop=""
-              @dblclick.stop="navigateToDocument(doc)"
+              class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
+              :class="{
+                'bg-indigo-100': currentDirectoryId === node._id,
+                'justify-center': collapsed
+              }"
+              @click.stop="toggleExpand(node, $event)"
+              @dblclick.stop="navigateToDirectory(node._id)"
             >
-              <!-- File type icon -->
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5 mr-2 text-blue-500"
-                viewBox="0 0 20 20"
-                fill="currentColor"
+              <button
+                v-if="
+                  !collapsed &&
+                  (node.children.length > 0 || (directoryDocuments.get(node._id)?.length ?? 0) > 0)
+                "
+                @click.stop.prevent="toggleExpand(node, $event)"
+                class="mr-2 text-gray-500 focus:outline-none"
               >
-                <path
-                  fill-rule="evenodd"
-                  d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
-            </div>
-
-            <!-- Child directories -->
-            <template v-for="childNode in node.children" :key="childNode._id">
-              <div
-                class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
-                :class="{ 'bg-indigo-100': currentDirectoryId === childNode._id }"
-                @click.stop="toggleExpand(childNode, $event)"
-                @dblclick.stop="navigateToDirectory(childNode._id)"
-              >
-                <button
-                  v-if="
-                    childNode.children.length > 0 ||
-                    (directoryDocuments.get(childNode._id)?.length ?? 0) > 0
-                  "
-                  @click.stop.prevent="toggleExpand(childNode, $event)"
-                  class="mr-1 text-gray-500 focus:outline-none"
-                >
-                  <svg
-                    v-if="!childNode.isExpanded"
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-3 w-3"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  <svg
-                    v-else
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-3 w-3"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <span v-else class="w-4"></span>
                 <svg
+                  v-if="!node.isExpanded"
                   xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 mr-2 text-indigo-600"
+                  class="h-3 w-3"
                   viewBox="0 0 20 20"
                   fill="currentColor"
                 >
-                  <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                  <path
+                    fill-rule="evenodd"
+                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                    clip-rule="evenodd"
+                  />
                 </svg>
-                <span class="text-gray-700 text-sm truncate flex-grow">{{ childNode.name }}</span>
-                <button
-                  @click.stop.prevent="openCreateModal(childNode._id, $event)"
-                  class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Add subdirectory"
+                <svg
+                  v-else
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-3 w-3"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-3 w-3"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                </button>
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </button>
+              <span v-else-if="!collapsed" class="w-4 mr-2"></span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5 text-indigo-500"
+                :class="{ 'mr-3': !collapsed }"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                />
+              </svg>
+
+              <span v-if="!collapsed" class="text-gray-700 text-sm truncate flex-grow">{{
+                node.name
+              }}</span>
+
+              <button
+                v-if="!collapsed"
+                @click.stop.prevent="openCreateModal(node._id, $event)"
+                class="text-gray-400 hover:text-indigo-500 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Add subdirectory"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Directory contents (when expanded) -->
+            <div v-if="!collapsed && node.isExpanded" class="pl-5 mt-1">
+              <!-- Documents in this directory -->
+              <div
+                v-for="doc in directoryDocuments.get(node._id) || []"
+                :key="doc.id"
+                class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                @click.stop=""
+                @dblclick.stop="navigateToDocument(doc)"
+              >
+                <!-- File type icon -->
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5 mr-2 text-blue-500"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
               </div>
 
-              <!-- Child directory contents (when expanded) -->
-              <div v-if="childNode.isExpanded" class="pl-5 mt-1">
-                <!-- Documents in child directory -->
+              <!-- Child directories -->
+              <template v-for="childNode in node.children" :key="childNode._id">
                 <div
-                  v-for="doc in directoryDocuments.get(childNode._id) || []"
-                  :key="doc.id"
-                  class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-                  @click.stop=""
-                  @dblclick.stop="navigateToDocument(doc)"
+                  class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
+                  :class="{ 'bg-indigo-100': currentDirectoryId === childNode._id }"
+                  @click.stop="toggleExpand(childNode, $event)"
+                  @dblclick.stop="navigateToDirectory(childNode._id)"
                 >
-                  <!-- File type icon -->
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-5 w-5 mr-2 text-blue-500"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
+                  <button
+                    v-if="
+                      childNode.children.length > 0 ||
+                      (directoryDocuments.get(childNode._id)?.length ?? 0) > 0
+                    "
+                    @click.stop.prevent="toggleExpand(childNode, $event)"
+                    class="mr-2 text-gray-500 focus:outline-none"
                   >
-                    <path
-                      fill-rule="evenodd"
-                      d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
-                </div>
-
-                <!-- Render nested child directories recursively -->
-                <template v-if="childNode.children.length > 0">
-                  <div
-                    v-for="grandchildNode in childNode.children"
-                    :key="grandchildNode._id"
-                    class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
-                    :class="{ 'bg-indigo-100': currentDirectoryId === grandchildNode._id }"
-                    @click.stop="toggleExpand(grandchildNode, $event)"
-                    @dblclick.stop="navigateToDirectory(grandchildNode._id)"
-                  >
-                    <button
-                      v-if="
-                        grandchildNode.children.length > 0 ||
-                        (directoryDocuments.get(grandchildNode._id)?.length ?? 0) > 0
-                      "
-                      @click.stop.prevent="toggleExpand(grandchildNode, $event)"
-                      class="mr-1 text-gray-500 focus:outline-none"
-                    >
-                      <svg
-                        v-if="!grandchildNode.isExpanded"
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path
-                          fill-rule="evenodd"
-                          d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                      <svg
-                        v-else
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path
-                          fill-rule="evenodd"
-                          d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                    </button>
-                    <span v-else class="w-4"></span>
                     <svg
+                      v-if="!childNode.isExpanded"
                       xmlns="http://www.w3.org/2000/svg"
-                      class="h-5 w-5 mr-2 text-indigo-600"
+                      class="h-3 w-3"
                       viewBox="0 0 20 20"
                       fill="currentColor"
                     >
                       <path
-                        d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
+                        fill-rule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clip-rule="evenodd"
                       />
                     </svg>
-                    <span class="text-gray-700 text-sm truncate flex-grow">{{
-                      grandchildNode.name
-                    }}</span>
-                    <button
-                      @click.stop.prevent="openCreateModal(grandchildNode._id, $event)"
-                      class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Add subdirectory"
+                    <svg
+                      v-else
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-3 w-3"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path
-                          fill-rule="evenodd"
-                          d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                          clip-rule="evenodd"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                </template>
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <span v-else class="w-4 mr-2"></span>
+                  <!-- Folder icon - replacing filled with outlined version -->
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-5 w-5 mr-3 text-indigo-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                    />
+                  </svg>
 
-                <!-- Grandchild directory contents -->
-                <template
-                  v-for="grandchildNode in childNode.children"
-                  :key="`content-${grandchildNode._id}`"
-                >
-                  <div v-if="grandchildNode.isExpanded" class="pl-5 mt-1">
-                    <!-- Documents in grandchild directory -->
-                    <div
-                      v-for="doc in directoryDocuments.get(grandchildNode._id) || []"
-                      :key="doc.id"
-                      class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
-                      @click.stop=""
-                      @dblclick.stop="navigateToDocument(doc)"
+                  <span class="text-gray-700 text-sm truncate flex-grow">{{ childNode.name }}</span>
+
+                  <button
+                    @click.stop.prevent="openCreateModal(childNode._id, $event)"
+                    class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Add subdirectory"
+                  >
+                    <!-- Plus + icon - updating to match other plus icons -->
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
                     >
-                      <!-- File type icon -->
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                  </button>
+                </div>
+
+                <!-- Child directory contents (when expanded) -->
+                <div v-if="childNode.isExpanded" class="pl-5 mt-1">
+                  <!-- Documents in child directory -->
+                  <div
+                    v-for="doc in directoryDocuments.get(childNode._id) || []"
+                    :key="doc.id"
+                    class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                    @click.stop=""
+                    @dblclick.stop="navigateToDocument(doc)"
+                  >
+                    <!-- File type icon -->
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-5 w-5 mr-2 text-blue-500"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                    <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+                  </div>
+
+                  <!-- Render nested child directories recursively -->
+                  <template v-if="childNode.children.length > 0">
+                    <div
+                      v-for="grandchildNode in childNode.children"
+                      :key="grandchildNode._id"
+                      class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors group"
+                      :class="{ 'bg-indigo-100': currentDirectoryId === grandchildNode._id }"
+                      @click.stop="toggleExpand(grandchildNode, $event)"
+                      @dblclick.stop="navigateToDirectory(grandchildNode._id)"
+                    >
+                      <button
+                        v-if="
+                          grandchildNode.children.length > 0 ||
+                          (directoryDocuments.get(grandchildNode._id)?.length ?? 0) > 0
+                        "
+                        @click.stop.prevent="toggleExpand(grandchildNode, $event)"
+                        class="mr-2 text-gray-500 focus:outline-none"
+                      >
+                        <svg
+                          v-if="!grandchildNode.isExpanded"
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="h-3 w-3"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path
+                            fill-rule="evenodd"
+                            d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                            clip-rule="evenodd"
+                          />
+                        </svg>
+                        <svg
+                          v-else
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="h-3 w-3"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path
+                            fill-rule="evenodd"
+                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                            clip-rule="evenodd"
+                          />
+                        </svg>
+                      </button>
+                      <span v-else class="w-4 mr-2"></span>
+                      <!-- Folder icon - replacing filled with outlined version -->
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        class="h-5 w-5 mr-2 text-blue-500"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
+                        class="h-5 w-5 mr-3 text-indigo-500"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
                       >
                         <path
-                          fill-rule="evenodd"
-                          d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                          clip-rule="evenodd"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                         />
                       </svg>
-                      <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+                      <span class="text-gray-700 text-sm truncate flex-grow">{{
+                        grandchildNode.name
+                      }}</span>
+                      <button
+                        @click.stop.prevent="openCreateModal(grandchildNode._id, $event)"
+                        class="text-gray-400 hover:text-indigo-600 focus:outline-none opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Add subdirectory"
+                      >
+                        <!-- Plus + icon - updating to match other plus icons -->
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="h-4 w-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      </button>
                     </div>
-                  </div>
-                </template>
-              </div>
-            </template>
+
+                    <!-- Grandchild directory contents -->
+                    <template
+                      v-for="grandchildNode in childNode.children"
+                      :key="`content-${grandchildNode._id}`"
+                    >
+                      <div v-if="grandchildNode.isExpanded" class="pl-5 mt-1">
+                        <!-- Documents in grandchild directory -->
+                        <div
+                          v-for="doc in directoryDocuments.get(grandchildNode._id) || []"
+                          :key="doc.id"
+                          class="flex items-center py-2 px-2 rounded-md cursor-pointer hover:bg-indigo-50 transition-colors"
+                          @click.stop=""
+                          @dblclick.stop="navigateToDocument(doc)"
+                        >
+                          <!-- File type icon -->
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-5 w-5 mr-2 text-blue-500"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fill-rule="evenodd"
+                              d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                              clip-rule="evenodd"
+                            />
+                          </svg>
+                          <span class="text-gray-700 text-sm truncate">{{ doc.title }}</span>
+                        </div>
+                      </div>
+                    </template>
+                  </template>
+                </div>
+              </template>
+            </div>
           </div>
-        </div>
-      </template>
+        </template>
+      </div>
     </div>
 
     <!-- Create Directory Modal -->
@@ -654,5 +655,6 @@ const toggleRootExpand = (event: Event) => {
 <style scoped>
 .directory-tree {
   font-size: 0.875rem;
+  padding-top: 0.5rem;
 }
 </style>
