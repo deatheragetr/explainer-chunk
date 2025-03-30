@@ -25,6 +25,7 @@ import asyncio
 from background.huey_jobs.capture_website_job import huey, capture_website  # type: ignore
 from background.huey_jobs.process_document_job import process_document  # type: ignore
 from background.huey_jobs.summarize_document_job import summarize_document  # type: ignore
+from background.huey_jobs.process_document_v2_job import process_document_with_docling  # type: ignore
 
 from config.logger import setup_logging
 from db.indices.ensure_indices import ensure_indices_with_manager

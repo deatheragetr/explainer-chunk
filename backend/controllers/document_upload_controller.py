@@ -155,8 +155,23 @@ async def upload_document(
             directory_path=directory_path,
         )
 
-        # Kick of background job to process document
+        # Kick off background jobs to process document
+
+        # Existing processor
         process_document(document_id=str(doc_id))
+
+        # NEW: Add Docling processor for academic papers
+        # Only process PDFs and certain document types with Docling
+        if reqBody.file_type.lower() in [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ]:
+            from background.huey_jobs.process_document_v2_job import (
+                process_document_with_docling,
+            )
+
+            process_document_with_docling(document_id=str(doc_id))
+            logger.info(f"Scheduled Docling processing for document: {doc_id}")
 
         try:
             result: InsertOneResult = await collection.insert_one(document)
