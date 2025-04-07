@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional, cast
 import os
 import tempfile
 from datetime import datetime, UTC
+import json
 
 from config.huey import huey
 from config.mongo import MongoManager, mongo_settings, TypedAsyncIOMotorDatabase
@@ -37,6 +38,7 @@ class DoclingDocumentProcessor:
         self.es_client = es_client
         self.converter = DocumentConverter()
         # Create a chunker using the HybridChunker class
+        # The token length warning is a "false alarm" according to Docling docs
         self.chunker = HybridChunker(
             granularity="paragraph",  # Can be "section", "paragraph", "sentence"
             add_metadata=True,  # Include metadata for each chunk
@@ -111,38 +113,58 @@ class DoclingDocumentProcessor:
 
     def _extract_structured_data(self, docling_doc) -> Dict[str, Any]:
         """Extract structured data from Docling document."""
-        # Get document metadata
-        metadata = docling_doc.metadata
+        # Get document origin metadata if available
+        document_metadata = {}
+        if hasattr(docling_doc, "origin"):
+            # Convert Pydantic model to dict for MongoDB compatibility
+            if hasattr(docling_doc.origin, "model_dump"):
+                document_metadata = docling_doc.origin.model_dump()
+            elif hasattr(docling_doc.origin, "dict"):
+                document_metadata = docling_doc.origin.dict()
+            else:
+                # Manually extract attributes if needed
+                document_metadata = {
+                    "mimetype": getattr(docling_doc.origin, "mimetype", None),
+                    "filename": getattr(docling_doc.origin, "filename", None),
+                    "binary_hash": str(
+                        getattr(docling_doc.origin, "binary_hash", None)
+                    ),
+                }
 
-        # Extract title, authors, abstract if available
-        title = docling_doc.title or "Untitled Document"
+        # Extract title, try different approaches
+        title = "Untitled Document"
+        if hasattr(docling_doc, "title"):
+            title = docling_doc.title or "Untitled Document"
 
         # Get all headings in the document
         headings = []
-        for heading in docling_doc.headings:
-            headings.append(heading.text)
+        if hasattr(docling_doc, "headings"):
+            for heading in docling_doc.headings:
+                headings.append(heading.text)
 
         # Extract tables if present
         tables = []
-        for table in docling_doc.tables:
-            tables.append(
-                {
-                    "caption": table.caption,
-                    "rows": len(table.rows) if hasattr(table, "rows") else 0,
-                    "cols": len(table.columns) if hasattr(table, "columns") else 0,
-                }
-            )
+        if hasattr(docling_doc, "tables"):
+            for table in docling_doc.tables:
+                tables.append(
+                    {
+                        "caption": table.caption if hasattr(table, "caption") else "",
+                        "rows": len(table.rows) if hasattr(table, "rows") else 0,
+                        "cols": len(table.columns) if hasattr(table, "columns") else 0,
+                    }
+                )
 
         # Extract figures if present
         figures = []
-        for figure in docling_doc.figures:
-            figures.append(
-                {
-                    "caption": figure.caption if hasattr(figure, "caption") else "",
-                }
-            )
+        if hasattr(docling_doc, "figures") and docling_doc.figures:
+            for figure in docling_doc.figures:
+                figures.append(
+                    {
+                        "caption": figure.caption if hasattr(figure, "caption") else "",
+                    }
+                )
 
-        # Combine into structured data
+        # Combine into structured data - ensure it's JSON serializable
         structured_data = {
             "title": title,
             "headings": headings,
@@ -150,7 +172,7 @@ class DoclingDocumentProcessor:
             "tables": tables,
             "figures_count": len(figures),
             "figures": figures,
-            "metadata": metadata,
+            "document_metadata": document_metadata,
             "processed_at": datetime.now(UTC).isoformat(),
         }
 
@@ -160,44 +182,61 @@ class DoclingDocumentProcessor:
         """Create chunks from Docling document using the HybridChunker."""
         chunks = []
 
-        # Use the Docling chunker to create chunks
-        doc_chunks = self.chunker.chunk(docling_doc)
+        # Get chunks from the document using the Docling chunker
+        doc_chunks = list(self.chunker.chunk(docling_doc))
 
+        # Process each chunk
         for i, chunk in enumerate(doc_chunks):
             # Get chunk text using the serialize method of the chunker
             text = self.chunker.serialize(chunk)
 
-            # Get metadata properties if available
+            # Extract metadata
             metadata = {}
-            if hasattr(chunk, "metadata"):
-                metadata = chunk.metadata
+            if hasattr(chunk, "metadata") and chunk.metadata:
+                # Convert metadata to a serializable format
+                metadata = self._ensure_serializable(chunk.metadata)
 
-            # Extract headings path if available
+            # Extract headings path if available in chunk
             heading_path = []
             if hasattr(chunk, "heading_path"):
                 heading_path = chunk.heading_path
-            elif "headings" in metadata:
-                heading_path = metadata["headings"]
+            elif (
+                hasattr(chunk, "metadata")
+                and chunk.metadata
+                and "headings" in chunk.metadata
+            ):
+                heading_path = chunk.metadata["headings"]
 
-            # Get page number if available
+            # Extract page number if available
             page_number = None
             if hasattr(chunk, "page_no"):
                 page_number = chunk.page_no
-            elif "page_no" in metadata:
-                page_number = metadata["page_no"]
+            elif (
+                hasattr(chunk, "metadata")
+                and chunk.metadata
+                and "page_no" in chunk.metadata
+            ):
+                page_number = chunk.metadata["page_no"]
 
             # Create chunk data
             chunk_data = {
                 "chunk_id": f"{document_id}_chunk_{i}",
                 "document_id": document_id,
                 "text": text,
-                "heading_path": heading_path,
+                "heading_path": heading_path if heading_path else [],
                 "chunk_index": i,
-                "chunk_type": chunk.label if hasattr(chunk, "label") else "text",
+                "chunk_type": (
+                    getattr(chunk, "label", "text")
+                    if hasattr(chunk, "label")
+                    else "text"
+                ),
                 "page_number": page_number,
-                "section_path": "/".join(heading_path) if heading_path else "",
-                "position_in_document": i
-                / len(doc_chunks),  # Normalize position to 0-1
+                "section_path": (
+                    "/".join(str(h) for h in heading_path) if heading_path else ""
+                ),
+                "position_in_document": (
+                    i / len(doc_chunks) if doc_chunks else 0
+                ),  # Normalize position to 0-1
                 "metadata": metadata,
             }
 
@@ -205,16 +244,49 @@ class DoclingDocumentProcessor:
 
         return chunks
 
+    def _ensure_serializable(self, obj):
+        """Make sure objects are serializable for MongoDB and handle large integers."""
+        if hasattr(obj, "model_dump"):
+            # For Pydantic v2
+            return self._ensure_serializable(obj.model_dump())
+        elif hasattr(obj, "dict"):
+            # For Pydantic v1
+            return self._ensure_serializable(obj.dict())
+        elif isinstance(obj, dict):
+            return {k: self._ensure_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._ensure_serializable(item) for item in obj]
+        elif isinstance(obj, (str, float, bool, type(None))):
+            return obj
+        elif isinstance(obj, int):
+            # Handle large integers that exceed MongoDB's 8-byte limit
+            try:
+                # Check if the int fits within MongoDB's limits
+                # Max 64-bit signed int: 9,223,372,036,854,775,807
+                if obj > 9223372036854775807 or obj < -9223372036854775808:
+                    # Convert to string if too large
+                    return str(obj)
+                return obj
+            except OverflowError:
+                # Handle any overflow errors by converting to string
+                return str(obj)
+        else:
+            # For any other objects, convert to string representation
+            return str(obj)
+
     async def _update_mongodb(
         self, document_id: str, structured_data: Dict[str, Any]
     ) -> None:
         """Update MongoDB with structured data from Docling."""
+        # Ensure structured_data is serializable
+        serializable_data = self._ensure_serializable(structured_data)
+
         # Update document in MongoDB with structured data
         await self.db.document_uploads.update_one(
             {"_id": ObjectId(document_id)},
             {
                 "$set": {
-                    "docling_structured_data": structured_data,
+                    "docling_structured_data": serializable_data,
                     "docling_processed_at": datetime.now(UTC),
                 }
             },
@@ -223,87 +295,172 @@ class DoclingDocumentProcessor:
     async def _store_in_elasticsearch(
         self, document_id: str, chunks: List[Dict[str, Any]]
     ) -> None:
-        """Store document chunks in Elasticsearch with vector embeddings."""
+        """Store document chunks in Elasticsearch with vector embeddings and handle connection errors."""
+        if not chunks:
+            logger.warning(f"No chunks to store for document {document_id}")
+            return
+
         # First, check if the index exists, create it if it doesn't
         index_name = f"{es_settings.elasticsearch_index_prefix}academic_papers"
 
-        if not await self.es_client.indices.exists(index=index_name):
-            # Create index with mapping for dense vectors
-            await self._create_elasticsearch_index(index_name)
+        # Retry mechanism for index existence check
+        max_retries = 3
+        retry_count = 0
+        index_exists = False
 
-        # Batch insert chunks into Elasticsearch
-        actions = []
+        while retry_count < max_retries:
+            try:
+                index_exists = await self.es_client.indices.exists(index=index_name)
+                break
+            except Exception as e:
+                retry_count += 1
+                logger.warning(
+                    f"Elasticsearch connection error (attempt {retry_count}/{max_retries}): {str(e)}"
+                )
+                if retry_count >= max_retries:
+                    logger.error(
+                        f"Failed to connect to Elasticsearch after {max_retries} attempts"
+                    )
+                    raise
+                # Exponential backoff before retry
+                await asyncio.sleep(2**retry_count)
+
+        # Create index if it doesn't exist
+        if not index_exists:
+            await self._create_elasticsearch_index(index_name)
 
         # Generate embeddings for all chunks
         chunk_texts = [chunk["text"] for chunk in chunks]
 
-        # Use OpenAI for embeddings (could replace with any embedding model)
+        # Use OpenAI for embeddings
         client = AsyncOpenAI(api_key=openai_settings.openai_api_key)
 
-        # Process in batches of 100 to avoid rate limits
+        # Process in batches to avoid rate limits
         batch_size = 100
+        actions = []
+
         for i in range(0, len(chunk_texts), batch_size):
             batch = chunk_texts[i : i + batch_size]
-            response = await client.embeddings.create(
-                model="text-embedding-3-small", input=batch
-            )
+            try:
+                response = await client.embeddings.create(
+                    model="text-embedding-3-small", input=batch
+                )
 
-            # Add embeddings to chunks
-            for j, embedding in enumerate(response.data):
-                idx = i + j
-                if idx < len(chunks):
-                    # Create Elasticsearch document
-                    es_doc = {
-                        **chunks[idx],
-                        "vector": embedding.embedding,
-                    }
-
-                    # Add to batch actions
-                    actions.append(
-                        {
-                            "_index": index_name,
-                            "_id": chunks[idx]["chunk_id"],
-                            "_source": es_doc,
+                # Add embeddings to chunks
+                for j, embedding in enumerate(response.data):
+                    idx = i + j
+                    if idx < len(chunks):
+                        # Create Elasticsearch document
+                        es_doc = {
+                            **chunks[idx],
+                            "vector": embedding.embedding,
                         }
-                    )
 
-        # Bulk insert into Elasticsearch
+                        # Add to batch actions
+                        actions.append(
+                            {
+                                "_index": index_name,
+                                "_id": chunks[idx]["chunk_id"],
+                                "_source": es_doc,
+                            }
+                        )
+            except Exception as e:
+                logger.error(
+                    f"Error generating embeddings for batch starting at index {i}: {str(e)}"
+                )
+                # Continue with other batches rather than failing completely
+                continue
+
+        if not actions:
+            logger.warning(
+                f"No valid actions to store in Elasticsearch for document {document_id}"
+            )
+            return
+
+        # Bulk insert into Elasticsearch with retry logic
         from elasticsearch.helpers import async_bulk
 
-        await async_bulk(self.es_client, actions)
+        max_bulk_retries = 3
+        bulk_retry_count = 0
 
-        logger.info(
-            f"Stored {len(chunks)} chunks in Elasticsearch for document {document_id}"
-        )
+        while bulk_retry_count < max_bulk_retries:
+            try:
+                # Use a reasonable timeout for bulk operations
+                success, errors = await async_bulk(
+                    self.es_client,
+                    actions,
+                    request_timeout=60,
+                    raise_on_error=False,  # Don't raise an exception on document errors
+                    stats_only=False,  # Return details about errors
+                )
+
+                if errors:
+                    logger.warning(
+                        f"Some chunks had errors during indexing: {len(errors)} errors"
+                    )
+                    for error in errors[:5]:  # Log first 5 errors
+                        logger.warning(f"Indexing error: {str(error)}")
+
+                logger.info(
+                    f"Stored {success} chunks in Elasticsearch for document {document_id}"
+                )
+                break
+
+            except Exception as e:
+                bulk_retry_count += 1
+                logger.warning(
+                    f"Elasticsearch bulk indexing error (attempt {bulk_retry_count}/{max_bulk_retries}): {str(e)}"
+                )
+                if bulk_retry_count >= max_bulk_retries:
+                    logger.error(
+                        f"Failed to store chunks in Elasticsearch after {max_bulk_retries} attempts"
+                    )
+                    raise
+                # Exponential backoff before retry
+                await asyncio.sleep(2**bulk_retry_count)
 
     async def _create_elasticsearch_index(self, index_name: str) -> None:
         """Create Elasticsearch index with appropriate mappings for academic papers."""
-        # Define mapping with dense vector field for embeddings
-        mapping = {
-            "mappings": {
-                "properties": {
-                    "chunk_id": {"type": "keyword"},
-                    "document_id": {"type": "keyword"},
-                    "text": {"type": "text"},
-                    "heading_path": {"type": "keyword"},
-                    "chunk_index": {"type": "integer"},
-                    "chunk_type": {"type": "keyword"},
-                    "page_number": {"type": "integer"},
-                    "section_path": {"type": "text"},
-                    "position_in_document": {"type": "float"},
-                    "vector": {
-                        "type": "dense_vector",
-                        "dims": 1536,  # Dimension for text-embedding-3-small
-                        "index": True,
-                        "similarity": "cosine",
-                    },
-                }
-            },
-            "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 1}},
-        }
+        try:
+            # Define mapping with dense vector field for embeddings
+            mapping = {
+                "mappings": {
+                    "properties": {
+                        "chunk_id": {"type": "keyword"},
+                        "document_id": {"type": "keyword"},
+                        "text": {"type": "text"},
+                        "heading_path": {"type": "keyword"},
+                        "chunk_index": {"type": "integer"},
+                        "chunk_type": {"type": "keyword"},
+                        "page_number": {"type": "integer"},
+                        "section_path": {"type": "text"},
+                        "position_in_document": {"type": "float"},
+                        "vector": {
+                            "type": "dense_vector",
+                            "dims": 1536,  # Dimension for text-embedding-3-small
+                            "index": True,
+                            "similarity": "cosine",
+                        },
+                    }
+                },
+                "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 1}},
+            }
 
-        await self.es_client.indices.create(index=index_name, body=mapping)
-        logger.info(f"Created Elasticsearch index: {index_name}")
+            # Create index with proper error handling
+            try:
+                await self.es_client.indices.create(index=index_name, body=mapping)
+                logger.info(f"Created Elasticsearch index: {index_name}")
+            except Exception as e:
+                # Check if it's already exists error which can be ignored
+                if "resource_already_exists_exception" in str(e):
+                    logger.info(f"Elasticsearch index {index_name} already exists")
+                else:
+                    logger.error(f"Error creating Elasticsearch index: {str(e)}")
+                    raise
+
+        except Exception as e:
+            logger.error(f"Failed to create Elasticsearch index: {str(e)}")
+            raise
 
 
 async def async_process_document_with_docling(document_id: str):
@@ -321,23 +478,51 @@ async def async_process_document_with_docling(document_id: str):
         finally:
             await mongo_manager.close()
 
-    # Set up Elasticsearch connection
     @asynccontextmanager
     async def get_elasticsearch_client():
-        es_client = AsyncElasticsearch(
-            es_settings.elasticsearch_url,
-            basic_auth=(
+        """Context manager to create and properly close an Elasticsearch client.
+        Handles HTTPS connections with appropriate SSL configuration.
+        """
+        # Create client configuration based on settings
+        hosts = [es_settings.elasticsearch_url]
+
+        # Configure client based on settings
+        client_kwargs = {
+            "hosts": hosts,
+            "basic_auth": (
                 es_settings.elasticsearch_user,
                 es_settings.elasticsearch_password,
             ),
-            verify_certs=es_settings.elasticsearch_verify_certs,
-        )
+            "verify_certs": es_settings.elasticsearch_verify_certs,
+            "ssl_show_warn": True,  # Always show SSL warnings for debugging
+        }
+
+        # Add CA certificate path if provided
+        if (
+            hasattr(es_settings, "elasticsearch_ca_certs")
+            and es_settings.elasticsearch_ca_certs
+        ):
+            client_kwargs["ca_certs"] = es_settings.elasticsearch_ca_certs
+
+        # Create the client
+        es_client = AsyncElasticsearch(**client_kwargs)
+
         try:
+            # Test connection to ensure it works
+            try:
+                info = await es_client.info()
+                logger.info(
+                    f"Successfully connected to Elasticsearch: {info['version']['number']}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Elasticsearch connection warning (will retry operations): {str(e)}"
+                )
+
             yield es_client
         finally:
             await es_client.close()
 
-    # Process document
     async with get_mongo_db() as db, get_elasticsearch_client() as es_client:
         processor = DoclingDocumentProcessor(db, es_client)
         return await processor.process_document(document_id)
