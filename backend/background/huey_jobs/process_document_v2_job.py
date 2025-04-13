@@ -533,10 +533,26 @@ def process_document_with_docling(document_id: str):
     """Huey task to process document with Docling."""
     logger.info(f"Starting Docling processing for document_id={document_id}")
     try:
-        # Run async function with asyncio
-        result = asyncio.run(async_process_document_with_docling(document_id))
-        logger.info(f"Finished Docling processing for document_id={document_id}")
-        return result
+        # Create a new event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            # Run the async function
+            result = loop.run_until_complete(
+                async_process_document_with_docling(document_id)
+            )
+            # Ensure pending tasks complete
+            pending = asyncio.all_tasks(loop)
+            if pending:
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            logger.info(f"Finished Docling processing for document_id={document_id}")
+            return result
+        finally:
+            # Close the loop properly
+            loop.close()
     except Exception as e:
         logger.exception(
             f"Error in Docling processing for document_id={document_id}: {str(e)}"
