@@ -13,8 +13,11 @@ from config.environment import OpenAISettings
 from config.logger import get_logger
 
 # Correct import for Docling chunker
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.chunking import HybridChunker
+from docling.datamodel.base_models import InputFormat
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
 # Correct import for Elasticsearch
 from elasticsearch import AsyncElasticsearch
@@ -36,7 +39,14 @@ class DoclingDocumentProcessor:
     ):
         self.db = db
         self.es_client = es_client
-        self.converter = DocumentConverter()
+        self.converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_cls=StandardPdfPipeline,
+                    backend=PyPdfiumDocumentBackend,
+                ),
+            },
+        )
         # Create a chunker using the HybridChunker class
         # The token length warning is a "false alarm" according to Docling docs
         self.chunker = HybridChunker(
@@ -81,6 +91,9 @@ class DoclingDocumentProcessor:
             conversion_result = self.converter.convert(file_path)
             docling_doc = conversion_result.document
 
+            for item, level in docling_doc.iterate_items():
+                print(f"Item type: {type(item)}, Level: {level}")
+
             # Extract structured data from the document
             structured_data = self._extract_structured_data(docling_doc)
 
@@ -112,71 +125,293 @@ class DoclingDocumentProcessor:
             raise
 
     def _extract_structured_data(self, docling_doc) -> Dict[str, Any]:
-        """Extract structured data from Docling document."""
-        # Get document origin metadata if available
-        document_metadata = {}
-        if hasattr(docling_doc, "origin"):
-            # Convert Pydantic model to dict for MongoDB compatibility
-            if hasattr(docling_doc.origin, "model_dump"):
-                document_metadata = docling_doc.origin.model_dump()
-            elif hasattr(docling_doc.origin, "dict"):
-                document_metadata = docling_doc.origin.dict()
-            else:
-                # Manually extract attributes if needed
-                document_metadata = {
-                    "mimetype": getattr(docling_doc.origin, "mimetype", None),
-                    "filename": getattr(docling_doc.origin, "filename", None),
-                    "binary_hash": str(
-                        getattr(docling_doc.origin, "binary_hash", None)
-                    ),
-                }
-
-        # Extract title, try different approaches
-        title = "Untitled Document"
-        if hasattr(docling_doc, "title"):
-            title = docling_doc.title or "Untitled Document"
-
-        # Get all headings in the document
-        headings = []
-        if hasattr(docling_doc, "headings"):
-            for heading in docling_doc.headings:
-                headings.append(heading.text)
-
-        # Extract tables if present
-        tables = []
-        if hasattr(docling_doc, "tables"):
-            for table in docling_doc.tables:
-                tables.append(
-                    {
-                        "caption": table.caption if hasattr(table, "caption") else "",
-                        "rows": len(table.rows) if hasattr(table, "rows") else 0,
-                        "cols": len(table.columns) if hasattr(table, "columns") else 0,
-                    }
-                )
-
-        # Extract figures if present
-        figures = []
-        if hasattr(docling_doc, "figures") and docling_doc.figures:
-            for figure in docling_doc.figures:
-                figures.append(
-                    {
-                        "caption": figure.caption if hasattr(figure, "caption") else "",
-                    }
-                )
-
-        # Combine into structured data - ensure it's JSON serializable
+        """Extract structured data from Docling document including document outline."""
+        # Initialize with safe defaults
         structured_data = {
-            "title": title,
-            "headings": headings,
-            "tables_count": len(tables),
-            "tables": tables,
-            "figures_count": len(figures),
-            "figures": figures,
-            "document_metadata": document_metadata,
+            "title": "Untitled Document",
+            "num_pages": 0,
+            "headings": [],
+            "tables_count": 0,
+            "tables": [],
+            "figures_count": 0,
+            "figures": [],
+            "document_metadata": {},
+            "outline": [],  # New field for document outline/skeleton
             "processed_at": datetime.now(UTC).isoformat(),
         }
 
+        # Extract document metadata
+        if hasattr(docling_doc, "origin"):
+            try:
+                metadata = {}
+                if hasattr(docling_doc.origin, "model_dump"):
+                    metadata = docling_doc.origin.model_dump()
+                elif hasattr(docling_doc.origin, "dict"):
+                    metadata = docling_doc.origin.dict()
+                else:
+                    # Extract individual attributes
+                    for attr in ["mimetype", "binary_hash", "filename", "uri"]:
+                        if hasattr(docling_doc.origin, attr):
+                            metadata[attr] = getattr(docling_doc.origin, attr)
+                            if attr == "binary_hash" and metadata[attr] is not None:
+                                metadata[attr] = str(metadata[attr])
+                structured_data["document_metadata"] = metadata
+            except Exception as e:
+                print(f"Error extracting metadata: {str(e)}")
+
+        # Get document title
+        if hasattr(docling_doc, "name") and docling_doc.name:
+            structured_data["title"] = docling_doc.name
+
+        # Get number of pages
+        if hasattr(docling_doc, "num_pages"):
+            try:
+                # Check if it's a method or an attribute
+                if callable(docling_doc.num_pages):
+                    structured_data["num_pages"] = docling_doc.num_pages()
+                else:
+                    structured_data["num_pages"] = docling_doc.num_pages
+            except Exception as e:
+                print(f"Error getting page count: {str(e)}")
+
+        # Extract document outline/skeleton
+        outline = self._extract_document_outline(docling_doc)
+        structured_data["outline"] = outline
+
+        # Extract headings from the outline for backward compatibility
+        structured_data["headings"] = [
+            item["text"]
+            for item in outline
+            if item["type"] in ["title", "section_header"]
+        ]
+
+        # Extract table data
+        if hasattr(docling_doc, "tables"):
+            try:
+                tables = list(docling_doc.tables)
+                structured_data["tables_count"] = len(tables)
+
+                for table in tables:
+                    table_info = {"caption": "", "rows": 0, "cols": 0, "data": []}
+
+                    # Get caption_text
+                    if hasattr(table, "caption_text") and callable(table.caption_text):
+                        try:
+                            table_info["caption"] = table.caption_text(docling_doc)
+                        except Exception:
+                            if hasattr(table, "captions") and table.captions:
+                                # Try to get first caption
+                                table_info["caption"] = "Table Caption"
+
+                    # Try to get table data
+                    if hasattr(table, "data") and table.data:
+                        try:
+                            if hasattr(table.data, "__iter__"):
+                                table_data = []
+                                for row_idx, row in enumerate(table.data):
+                                    if hasattr(row, "__iter__"):
+                                        row_data = []
+                                        for col_idx, cell in enumerate(row):
+                                            cell_text = (
+                                                str(cell) if cell is not None else ""
+                                            )
+                                            row_data.append(cell_text)
+                                        table_data.append(row_data)
+
+                                if table_data:
+                                    table_info["data"] = table_data
+                                    table_info["rows"] = len(table_data)
+                                    table_info["cols"] = (
+                                        max(len(row) for row in table_data)
+                                        if table_data
+                                        else 0
+                                    )
+                        except Exception as e:
+                            print(f"Error extracting table data: {str(e)}")
+
+                    structured_data["tables"].append(table_info)
+            except Exception as e:
+                print(f"Error processing tables: {str(e)}")
+
+        # Extract figure data
+        if hasattr(docling_doc, "pictures"):
+            try:
+                figures = list(docling_doc.pictures)
+                structured_data["figures_count"] = len(figures)
+
+                for figure in figures:
+                    figure_info = {"caption": "", "image_info": {}}
+
+                    # Get caption_text
+                    if hasattr(figure, "caption_text") and callable(
+                        figure.caption_text
+                    ):
+                        try:
+                            figure_info["caption"] = figure.caption_text(docling_doc)
+                        except Exception:
+                            if hasattr(figure, "captions") and figure.captions:
+                                # Try to get first caption
+                                figure_info["caption"] = "Figure Caption"
+
+                    # Try to get image details
+                    if hasattr(figure, "image") and figure.image:
+                        try:
+                            if hasattr(figure.image, "width") and hasattr(
+                                figure.image, "height"
+                            ):
+                                figure_info["image_info"]["width"] = figure.image.width
+                                figure_info["image_info"][
+                                    "height"
+                                ] = figure.image.height
+
+                            # Try to get other potentially useful image properties
+                            for attr in ["format", "page", "dpi"]:
+                                if hasattr(figure.image, attr):
+                                    value = getattr(figure.image, attr)
+                                    if value is not None:
+                                        figure_info["image_info"][attr] = value
+                        except Exception as e:
+                            print(f"Error extracting image details: {str(e)}")
+
+                    structured_data["figures"].append(figure_info)
+            except Exception as e:
+                print(f"Error processing figures: {str(e)}")
+
         return structured_data
+
+    def _extract_document_outline(self, docling_doc) -> List[Dict[str, Any]]:
+        """
+        Extract document outline/skeleton from Docling document.
+
+        Creates a hierarchical representation of the document structure,
+        including title, sections, subsections, and their page numbers.
+        """
+        outline = []
+        current_section_stack = []  # Track section nesting using a stack
+
+        # First pass: collect all section headers and their levels
+        for item, level in docling_doc.iterate_items():
+            item_type = type(item).__name__
+
+            # Extract page number from item's provenance if available
+            page_number = None
+            if hasattr(item, "prov") and item.prov:
+                for prov in item.prov:
+                    if hasattr(prov, "page_no"):
+                        page_number = prov.page_no
+                        break
+
+            # Process title and section headers for the outline
+            if (
+                item_type == "TitleItem"
+                or hasattr(item, "label")
+                and item.label == "title"
+            ):
+                outline_item = {
+                    "id": f"item_{len(outline)}",
+                    "type": "title",
+                    "text": item.text if hasattr(item, "text") else "Untitled",
+                    "level": 0,  # Title is always top level
+                    "page_number": page_number,
+                    "children": [],
+                }
+                outline.append(outline_item)
+
+            elif item_type == "SectionHeaderItem" or (
+                hasattr(item, "label") and item.label == "section_header"
+            ):
+                # Get section level (defaults to 1 if not available)
+                section_level = (
+                    getattr(item, "level", 1) if hasattr(item, "level") else 1
+                )
+
+                outline_item = {
+                    "id": f"item_{len(outline)}",
+                    "type": "section_header",
+                    "text": item.text if hasattr(item, "text") else "Untitled Section",
+                    "level": section_level,
+                    "page_number": page_number,
+                    "children": [],
+                }
+
+                # Update the section stack based on the current section's level
+                while (
+                    current_section_stack
+                    and current_section_stack[-1]["level"] >= section_level
+                ):
+                    current_section_stack.pop()
+
+                # Add as child to parent section or as top-level item
+                if current_section_stack:
+                    current_section_stack[-1]["children"].append(outline_item)
+                else:
+                    outline.append(outline_item)
+
+                current_section_stack.append(outline_item)
+
+            # Optionally track other significant elements like tables and figures
+            # to associate them with their parent sections
+            elif item_type == "TableItem" or (
+                hasattr(item, "label") and item.label == "table"
+            ):
+                if current_section_stack:
+                    table_item = {
+                        "id": f"item_{len(outline)}",
+                        "type": "table",
+                        "text": "Table: "
+                        + (
+                            item.caption_text(docling_doc)
+                            if hasattr(item, "caption_text")
+                            and callable(item.caption_text)
+                            else ""
+                        ),
+                        "page_number": page_number,
+                    }
+                    current_section_stack[-1]["children"].append(table_item)
+
+            elif item_type == "PictureItem" or (
+                hasattr(item, "label") and item.label == "picture"
+            ):
+                if current_section_stack:
+                    figure_item = {
+                        "id": f"item_{len(outline)}",
+                        "type": "figure",
+                        "text": "Figure: "
+                        + (
+                            item.caption_text(docling_doc)
+                            if hasattr(item, "caption_text")
+                            and callable(item.caption_text)
+                            else ""
+                        ),
+                        "page_number": page_number,
+                    }
+                    current_section_stack[-1]["children"].append(figure_item)
+
+        # Optional: flatten nested structure to a list for easier processing if needed
+        flat_outline = self._flatten_outline(outline)
+
+        return flat_outline  # or return outline for nested structure
+
+    def _flatten_outline(self, nested_outline, parent_id=None, result=None):
+        """
+        Convert a nested outline to a flat list with parent/child relationships.
+        This format may be easier to work with in some applications.
+        """
+        if result is None:
+            result = []
+
+        for item in nested_outline:
+            # Create a copy without the children
+            flat_item = {k: v for k, v in item.items() if k != "children"}
+            flat_item["parent_id"] = parent_id
+
+            result.append(flat_item)
+
+            # Process children recursively
+            if "children" in item and item["children"]:
+                self._flatten_outline(item["children"], item["id"], result)
+
+        return result
 
     def _create_chunks(self, docling_doc, document_id: str) -> List[Dict[str, Any]]:
         """Create chunks from Docling document using the HybridChunker."""
