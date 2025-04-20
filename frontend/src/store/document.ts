@@ -17,6 +17,7 @@ interface DocumentState {
   currentPage: number
   isLoading: boolean
   error: string | null
+  isInternalUpdate: boolean
 }
 
 export const useDocumentStore = defineStore('document', {

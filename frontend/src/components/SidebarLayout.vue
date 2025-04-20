@@ -56,6 +56,8 @@ onMounted(async () => {
   // Only fetch directories on the first mount - don't navigate yet
   await directoryStore.fetchAllDirectories()
   console.log('Sidebar mounted - directories loaded')
+  // Don't automatically navigate in the sidebar - let the route handlers do it
+  // This prevents the sidebar from overriding URL-based navigation
 })
 </script>
 
