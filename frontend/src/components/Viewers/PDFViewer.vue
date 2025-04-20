@@ -1,14 +1,39 @@
+<!-- src/components/Viewers/PDFViewer.vue -->
 <template>
   <div class="pdf-viewer" ref="pdfContainer">
     <div v-if="error" class="error-message">{{ error }}</div>
     <div v-else-if="!contentUrl" class="loading-message">Waiting for PDF...</div>
-    <vue-pdf-embed
-      v-else
-      text-layer
-      annotation-layer
-      :source="contentUrl"
-      :width="containerWidth"
-    />
+    <div v-else>
+      <!-- PDF Controls -->
+      <div class="controls bg-white p-2 border-b flex items-center justify-between">
+        <button
+          @click="prevPage"
+          class="px-3 py-1 bg-indigo-100 hover:bg-indigo-200 rounded text-indigo-800 disabled:opacity-50"
+          :disabled="currentPage <= 1"
+        >
+          Previous
+        </button>
+        <span class="text-sm"> Page {{ currentPage }} of {{ totalPages }} </span>
+        <button
+          @click="nextPage"
+          class="px-3 py-1 bg-indigo-100 hover:bg-indigo-200 rounded text-indigo-800 disabled:opacity-50"
+          :disabled="currentPage >= totalPages"
+        >
+          Next
+        </button>
+      </div>
+
+      <!-- PDF Viewer -->
+      <vue-pdf-embed
+        ref="pdfEmbed"
+        text-layer
+        annotation-layer
+        :source="contentUrl"
+        :width="containerWidth"
+        :page="currentPage"
+        @loaded="onPdfLoaded"
+      />
+    </div>
   </div>
 </template>
 
@@ -18,6 +43,7 @@ import VuePdfEmbed from 'vue-pdf-embed'
 import 'vue-pdf-embed/dist/style/index.css'
 import 'vue-pdf-embed/dist/style/textLayer.css'
 import 'vue-pdf-embed/dist/style/annotationLayer.css'
+import { useDocumentStore } from '@/store/document'
 
 // Debounce function
 const debounce = (fn: Function, delay: number) => {
@@ -44,7 +70,12 @@ export default defineComponent({
   setup(props) {
     const error = ref<string | null>(null)
     const pdfContainer = ref<HTMLElement | null>(null)
+    const pdfEmbed = ref<any>(null)
     const containerWidth = ref<number>(0)
+    const documentStore = useDocumentStore()
+
+    const currentPage = ref<number>(1)
+    const totalPages = ref<number>(1)
 
     const updateContainerWidth = () => {
       if (pdfContainer.value) {
@@ -52,30 +83,99 @@ export default defineComponent({
       }
     }
 
-    // Debounced version of updateContainerWidth
     const debouncedUpdateContainerWidth = debounce(updateContainerWidth, 100)
+
+    const prevPage = () => {
+      if (currentPage.value > 1) {
+        currentPage.value -= 1
+        documentStore.setCurrentPage(currentPage.value, false) // Update store without triggering event
+      }
+    }
+
+    const nextPage = () => {
+      if (currentPage.value < totalPages.value) {
+        currentPage.value += 1
+        documentStore.setCurrentPage(currentPage.value, false) // Update store without triggering event
+      }
+    }
+
+    const onPdfLoaded = async (pdf: any) => {
+      totalPages.value = pdf.numPages
+
+      // Set initial page from document store if available
+      if (documentStore.currentPage > 0 && documentStore.currentPage <= pdf.numPages) {
+        currentPage.value = documentStore.currentPage
+      } else {
+        documentStore.setCurrentPage(currentPage.value, false)
+      }
+    }
 
     watch(
       () => props.contentUrl,
-      (newcontentUrl) => {
-        console.log('PDF contentUrl changed:', newcontentUrl)
+      (newContentUrl) => {
+        console.log('PDF contentUrl changed:', newContentUrl)
         error.value = null
+        currentPage.value = 1
+        totalPages.value = 1
+      }
+    )
+
+    // Watch for changes in the document store's current page
+    watch(
+      () => documentStore.currentPage,
+      (newPage) => {
+        if (newPage > 0 && newPage <= totalPages.value && !documentStore.isInternalUpdate) {
+          currentPage.value = newPage
+        }
       }
     )
 
     onMounted(() => {
-      updateContainerWidth() // Initial width set
+      updateContainerWidth()
       const resizeObserver = new ResizeObserver(debouncedUpdateContainerWidth)
       if (pdfContainer.value) {
         resizeObserver.observe(pdfContainer.value)
       }
 
+      // Listen for keyboard navigation
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+          prevPage()
+        } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+          nextPage()
+        }
+      }
+
+      window.addEventListener('keydown', handleKeyDown)
+
+      // Listen for navigate-to-page events
+      const handleNavigateToPage = (event: CustomEvent) => {
+        const { pageNumber } = event.detail
+        if (pageNumber > 0 && pageNumber <= totalPages.value) {
+          currentPage.value = pageNumber
+        }
+      }
+
+      window.addEventListener('navigate-to-page', handleNavigateToPage as EventListener)
+
       onUnmounted(() => {
         resizeObserver.disconnect()
+        window.removeEventListener('keydown', handleKeyDown)
+        window.removeEventListener('navigate-to-page', handleNavigateToPage as EventListener)
       })
     })
 
-    return { error, pdfContainer, containerWidth }
+    return {
+      error,
+      pdfContainer,
+      pdfEmbed,
+      containerWidth,
+      currentPage,
+      totalPages,
+      prevPage,
+      nextPage,
+      onPdfLoaded
+    }
   }
 })
 </script>
@@ -84,6 +184,13 @@ export default defineComponent({
 .pdf-viewer {
   height: 100%;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.controls {
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 .error-message,
 .loading-message {
