@@ -288,6 +288,7 @@ class DoclingDocumentProcessor:
         """
         outline = []
         current_section_stack = []  # Track section nesting using a stack
+        item_counter = 0  # Global counter for unique IDs
 
         # First pass: collect all section headers and their levels
         for item, level in docling_doc.iterate_items():
@@ -308,13 +309,14 @@ class DoclingDocumentProcessor:
                 and item.label == "title"
             ):
                 outline_item = {
-                    "id": f"item_{len(outline)}",
+                    "id": f"outline_item_{item_counter}",  # Use global counter
                     "type": "title",
                     "text": item.text if hasattr(item, "text") else "Untitled",
                     "level": 0,  # Title is always top level
-                    "page_number": page_number,
-                    "children": [],
+                    "page_number": page_number or 1,  # Default to page 1 if not found
+                    "parent_id": None,  # Titles are top-level
                 }
+                item_counter += 1
                 outline.append(outline_item)
 
             elif item_type == "SectionHeaderItem" or (
@@ -326,13 +328,14 @@ class DoclingDocumentProcessor:
                 )
 
                 outline_item = {
-                    "id": f"item_{len(outline)}",
+                    "id": f"outline_item_{item_counter}",  # Use global counter
                     "type": "section_header",
                     "text": item.text if hasattr(item, "text") else "Untitled Section",
                     "level": section_level,
-                    "page_number": page_number,
-                    "children": [],
+                    "page_number": page_number or 1,  # Default to page 1 if not found
+                    "parent_id": None,  # Will be set below if there's a parent
                 }
+                item_counter += 1
 
                 # Update the section stack based on the current section's level
                 while (
@@ -341,56 +344,63 @@ class DoclingDocumentProcessor:
                 ):
                     current_section_stack.pop()
 
-                # Add as child to parent section or as top-level item
+                # Set parent_id if we have a parent section
                 if current_section_stack:
-                    current_section_stack[-1]["children"].append(outline_item)
-                else:
-                    outline.append(outline_item)
+                    outline_item["parent_id"] = current_section_stack[-1]["id"]
 
+                # Add to outline and update the stack
+                outline.append(outline_item)
                 current_section_stack.append(outline_item)
 
             # Optionally track other significant elements like tables and figures
-            # to associate them with their parent sections
             elif item_type == "TableItem" or (
                 hasattr(item, "label") and item.label == "table"
             ):
-                if current_section_stack:
-                    table_item = {
-                        "id": f"item_{len(outline)}",
-                        "type": "table",
-                        "text": "Table: "
-                        + (
-                            item.caption_text(docling_doc)
-                            if hasattr(item, "caption_text")
-                            and callable(item.caption_text)
-                            else ""
-                        ),
-                        "page_number": page_number,
-                    }
-                    current_section_stack[-1]["children"].append(table_item)
+                caption = (
+                    item.caption_text(docling_doc)
+                    if hasattr(item, "caption_text") and callable(item.caption_text)
+                    else ""
+                )
+
+                table_item = {
+                    "id": f"outline_item_{item_counter}",  # Use global counter
+                    "type": "table",
+                    "text": f"Table: {caption}",
+                    "page_number": page_number or 1,  # Default to page 1 if not found
+                    "parent_id": (
+                        current_section_stack[-1]["id"]
+                        if current_section_stack
+                        else None
+                    ),
+                }
+                item_counter += 1
+                outline.append(table_item)
 
             elif item_type == "PictureItem" or (
                 hasattr(item, "label") and item.label == "picture"
             ):
-                if current_section_stack:
-                    figure_item = {
-                        "id": f"item_{len(outline)}",
-                        "type": "figure",
-                        "text": "Figure: "
-                        + (
-                            item.caption_text(docling_doc)
-                            if hasattr(item, "caption_text")
-                            and callable(item.caption_text)
-                            else ""
-                        ),
-                        "page_number": page_number,
-                    }
-                    current_section_stack[-1]["children"].append(figure_item)
+                caption = (
+                    item.caption_text(docling_doc)
+                    if hasattr(item, "caption_text") and callable(item.caption_text)
+                    else ""
+                )
 
-        # Optional: flatten nested structure to a list for easier processing if needed
-        flat_outline = self._flatten_outline(outline)
+                figure_item = {
+                    "id": f"outline_item_{item_counter}",  # Use global counter
+                    "type": "figure",
+                    "text": f"Figure: {caption}",
+                    "page_number": page_number or 1,  # Default to page 1 if not found
+                    "parent_id": (
+                        current_section_stack[-1]["id"]
+                        if current_section_stack
+                        else None
+                    ),
+                }
+                item_counter += 1
+                outline.append(figure_item)
 
-        return flat_outline  # or return outline for nested structure
+        # Return the flat outline with explicit parent-child relationships
+        return outline
 
     def _flatten_outline(self, nested_outline, parent_id=None, result=None):
         """
