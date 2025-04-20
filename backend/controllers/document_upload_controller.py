@@ -26,6 +26,7 @@ from api.responses.document_upload import (
     ThumbnailInfo,
     DocumentRetrieveResponseForPage,
     NoteResponse,
+    DoclingStructuredData,
 )
 from api.utils.s3_utils import verify_s3_object
 from typing import Annotated
@@ -224,7 +225,13 @@ async def get_document(
         # Avoid fetching the entire document, with the potentially long extracted text
         document = await collection.find_one(
             {"_id": obj_id, "user_id": user_id},
-            {"_id": 1, "file_details": 1, "custom_title": 1, "extracted_metadata": 1},
+            {
+                "_id": 1,
+                "file_details": 1,
+                "custom_title": 1,
+                "extracted_metadata": 1,
+                "docling_structured_data.outline": 1,
+            },
         )
 
         if not document:
@@ -264,11 +271,15 @@ async def get_document(
             directory_path=(
                 document["directory_path"] if document.get("directory_path") else None
             ),
+            docling_structured_data=DoclingStructuredData(
+                outline=document.get("docling_structured_data", {}).get("outline")
+            ),
         )
     except HTTPException as e:
         raise e
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid document ID")
+    except ValueError as e:
+        logger.error(f"Error fetching document: {str(e)}")
+        raise HTTPException(status_code=400, detail="Failed to fetch document")
     except Exception as e:
         logger.error(f"Error fetching document: {str(e)}")
         raise HTTPException(
