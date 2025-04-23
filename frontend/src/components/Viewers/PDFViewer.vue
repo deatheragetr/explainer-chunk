@@ -24,7 +24,7 @@
       </div>
 
       <!-- PDF Viewer with scrollable container -->
-      <div class="pdf-content" ref="pdfContent" @scroll="handleScroll">
+      <div class="pdf-content" ref="pdfContent">
         <vue-pdf-embed
           ref="pdfEmbed"
           text-layer
@@ -40,7 +40,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, watch, onMounted, onUnmounted } from 'vue'
+import { defineComponent, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import VuePdfEmbed from 'vue-pdf-embed'
 import 'vue-pdf-embed/dist/style/index.css'
 import 'vue-pdf-embed/dist/style/textLayer.css'
@@ -80,6 +80,7 @@ export default defineComponent({
     const currentPage = ref<number>(1)
     const totalPages = ref<number>(1)
     const pdfLoaded = ref<boolean>(false)
+    const isManualNavigation = ref<boolean>(false)
 
     const updateContainerWidth = () => {
       if (pdfContainer.value) {
@@ -89,38 +90,98 @@ export default defineComponent({
 
     const debouncedUpdateContainerWidth = debounce(updateContainerWidth, 100)
 
-    // Scroll to a specific page using nth-child selector
+    // Get all page elements - examining different possible selectors
+    const getPageElements = () => {
+      if (!pdfContent.value) return []
+
+      console.log('Looking for page elements...')
+
+      // Try different possible selectors for PDF pages
+      const selectors = [
+        '.vue-pdf-embed__page',
+        '.rpv-core__viewer-page',
+        '.rpv-core__page-layer',
+        '.page',
+        '[data-page-number]',
+        'canvas'
+      ]
+
+      for (const selector of selectors) {
+        const elements = pdfContent.value.querySelectorAll(selector)
+        if (elements.length > 0) {
+          console.log(`Found ${elements.length} elements with selector ${selector}`)
+          return Array.from(elements) as HTMLElement[]
+        }
+      }
+
+      // If no specific selectors work, try to find any divs with specific dimensions
+      // which might be page containers
+      console.log('No standard selectors found, searching for potential page containers...')
+      const divs = pdfContent.value.querySelectorAll('div')
+      const potentialPages = Array.from(divs).filter((div) => {
+        const style = window.getComputedStyle(div)
+        return parseInt(style.height) > 100 && parseInt(style.width) > 100
+      })
+
+      if (potentialPages.length > 0) {
+        console.log(`Found ${potentialPages.length} potential page containers`)
+        return potentialPages as HTMLElement[]
+      }
+
+      console.log('No page elements found')
+      return []
+    }
+
+    // Log the DOM structure of the PDF viewer for debugging
+    const logViewerStructure = () => {
+      if (!pdfContent.value) return
+
+      console.log('PDF Content Element:', pdfContent.value)
+
+      // Find the first few levels of children
+      const logChildren = (element: Element, depth = 0) => {
+        if (depth > 3) return // Limit depth to avoid excessive logging
+
+        const children = element.children
+        for (let i = 0; i < children.length; i++) {
+          const child = children[i]
+          console.log(
+            '  '.repeat(depth) +
+              `Child ${i}: ${child.tagName} - Classes: ${child.className} - ID: ${child.id}`
+          )
+          logChildren(child, depth + 1)
+        }
+      }
+
+      console.log('DOM Structure of PDF Content:')
+      logChildren(pdfContent.value)
+    }
+
+    // Scroll to a specific page
     const scrollToPage = (pageNumber: number) => {
       if (!pdfContent.value || !pdfLoaded.value) {
         console.log('PDF content not ready yet')
         return
       }
 
-      // Target the nth page element using the class you identified
-      const targetPage = pdfContent.value.querySelector(
-        `.vue-pdf-embed__page:nth-child(${pageNumber})`
-      )
+      // Set flag to prevent scroll handler from immediately overriding the navigation
+      isManualNavigation.value = true
 
-      if (targetPage) {
-        // Scroll the target page into view
-        targetPage.scrollIntoView({ behavior: 'smooth' })
-        console.log(`Scrolled to page ${pageNumber}`)
-      } else {
-        console.warn(`Could not find page ${pageNumber} element`)
-
-        // Fallback: try to find all page elements and use index
-        const allPages = pdfContent.value.querySelectorAll('.vue-pdf-embed__page')
-        if (allPages && allPages.length >= pageNumber) {
-          // Arrays are 0-indexed, so subtract 1
-          const page = allPages[pageNumber - 1]
-          page.scrollIntoView({ behavior: 'smooth' })
-          console.log(`Scrolled to page ${pageNumber} using array index`)
-        } else {
-          console.error(
-            `No page elements found or page ${pageNumber} out of range (found ${allPages.length} pages)`
-          )
+      const pages = getPageElements()
+      if (pages.length >= pageNumber) {
+        const targetPage = pages[pageNumber - 1]
+        if (targetPage) {
+          targetPage.scrollIntoView({ behavior: 'smooth' })
+          console.log(`Scrolled to page ${pageNumber}`)
         }
+      } else {
+        console.warn(`Could not find page ${pageNumber} element (found ${pages.length} pages)`)
       }
+
+      // Reset the navigation flag after animation completes
+      setTimeout(() => {
+        isManualNavigation.value = false
+      }, 1000)
     }
 
     const prevPage = () => {
@@ -139,64 +200,122 @@ export default defineComponent({
       }
     }
 
-    // Handle scroll events to update current page
-    const handleScroll = debounce(() => {
-      if (!pdfContent.value || !pdfLoaded.value) return
+    // Find the most visible page in the viewport
+    const findVisiblePage = () => {
+      if (!pdfContent.value) return 1
 
-      const container = pdfContent.value
-      const pages = container.querySelectorAll('.vue-pdf-embed__page')
+      const pages = getPageElements()
+      if (!pages.length) return 1
 
-      if (!pages || pages.length === 0) return
-
-      const containerRect = container.getBoundingClientRect()
-      const containerTop = containerRect.top
-      const containerHeight = containerRect.height
+      const scrollTop = pdfContent.value.scrollTop
+      const containerHeight = pdfContent.value.clientHeight
+      const containerMid = scrollTop + containerHeight / 2
 
       let bestVisiblePage = 1
-      let maxVisibleArea = 0
+      let closestDistance = Infinity
 
-      // Find which page is most visible in the viewport
       pages.forEach((page, index) => {
-        const pageRect = page.getBoundingClientRect()
-        const pageNum = index + 1 // Convert to 1-based index
+        const rect = page.getBoundingClientRect()
+        const pageTop = page.offsetTop
+        const pageHeight = rect.height
+        const pageMid = pageTop + pageHeight / 2
+        const distance = Math.abs(pageMid - containerMid)
 
-        // Calculate how much of the page is visible
-        const visibleTop = Math.max(pageRect.top, containerTop)
-        const visibleBottom = Math.min(pageRect.bottom, containerTop + containerHeight)
-        const visibleHeight = Math.max(0, visibleBottom - visibleTop)
-        const visibleArea = visibleHeight * pageRect.width
-
-        if (visibleArea > maxVisibleArea) {
-          maxVisibleArea = visibleArea
-          bestVisiblePage = pageNum
+        if (distance < closestDistance) {
+          closestDistance = distance
+          bestVisiblePage = index + 1 // 1-based page numbering
         }
       })
 
-      if (bestVisiblePage !== currentPage.value) {
-        currentPage.value = bestVisiblePage
-        documentStore.setCurrentPage(bestVisiblePage, false)
+      return bestVisiblePage
+    }
+
+    // Using a direct approach based on scroll position
+    const calculatePageFromScroll = () => {
+      if (!pdfContent.value || totalPages.value <= 1) return 1
+
+      const container = pdfContent.value
+      const scrollTop = container.scrollTop
+      const scrollHeight = container.scrollHeight - container.clientHeight
+
+      // If scroll not possible, we're on page 1
+      if (scrollHeight <= 0) return 1
+
+      // Calculate page based on scroll position
+      const scrollRatio = scrollTop / scrollHeight
+      const page = Math.floor(scrollRatio * totalPages.value) + 1
+
+      // Make sure we're in valid range
+      return Math.max(1, Math.min(page, totalPages.value))
+    }
+
+    // Handle scroll events to update current page
+    const handleScroll = () => {
+      console.log('Scroll event fired')
+
+      // Skip if we're in the middle of programmatic navigation
+      if (isManualNavigation.value || !pdfLoaded.value) return
+
+      // Try both methods to find the visible page
+      const visiblePage = findVisiblePage()
+      const calculatedPage = calculatePageFromScroll()
+
+      console.log(`Page detection: visiblePage=${visiblePage}, calculatedPage=${calculatedPage}`)
+
+      // Use the visible page method if it returns something other than 1,
+      // otherwise use the calculated page method
+      const newPage = visiblePage !== 1 ? visiblePage : calculatedPage
+
+      if (newPage !== currentPage.value) {
+        console.log(`Updating current page to ${newPage} (was ${currentPage.value})`)
+        currentPage.value = newPage
+        documentStore.setCurrentPage(newPage, false)
       }
-    }, 200)
+    }
+
+    // Create debounced version for better performance
+    // const debouncedHandleScroll = debounce(handleScroll, 100)
+    const debouncedHandleScroll = handleScroll
 
     const onPdfLoaded = async (pdf: any) => {
+      console.log('PDF loaded', pdf)
       totalPages.value = pdf.numPages
 
-      // Wait for the PDF to render all pages
-      setTimeout(() => {
+      // Wait for the PDF pages to render
+      setTimeout(async () => {
         pdfLoaded.value = true
-        console.log('PDF pages rendered, navigation ready')
+        console.log('PDF fully loaded, setting up scroll detection')
 
         // Set initial page from document store if available
         if (documentStore.currentPage > 0 && documentStore.currentPage <= pdf.numPages) {
           currentPage.value = documentStore.currentPage
-          // Delay scrolling to ensure elements are rendered
+        } else {
+          documentStore.setCurrentPage(currentPage.value, false)
+        }
+
+        await nextTick()
+
+        // Log the DOM structure for debugging
+        logViewerStructure()
+
+        // Add scroll listener
+        if (pdfContent.value) {
+          console.log('Adding scroll listener to pdfContent')
+          const pdfDiv = document.getElementsByClassName('vue-pdf-embed__page')[0]
+          pdfDiv.addEventListener('scroll', debouncedHandleScroll)
+
+          // Get the page elements to make sure they're available
+          const pages = getPageElements()
+          console.log(`Found ${pages.length} page elements after loading`)
+
+          // Scroll to initial page after a short delay
           setTimeout(() => {
             scrollToPage(currentPage.value)
           }, 200)
         } else {
-          documentStore.setCurrentPage(currentPage.value, false)
+          console.error('PDF content element not found')
         }
-      }, 1000) // Allow time for PDF to render all pages
+      }, 1000) // Allow time for PDF to render
     }
 
     watch(
@@ -207,6 +326,11 @@ export default defineComponent({
         currentPage.value = 1
         totalPages.value = 1
         pdfLoaded.value = false
+
+        // Remove old scroll listener when URL changes
+        if (pdfContent.value) {
+          pdfContent.value.removeEventListener('scroll', debouncedHandleScroll)
+        }
       }
     )
 
@@ -259,6 +383,11 @@ export default defineComponent({
         resizeObserver.disconnect()
         window.removeEventListener('keydown', handleKeyDown)
         window.removeEventListener('navigate-to-page', handleNavigateToPage as EventListener)
+
+        // Remove scroll listener
+        if (pdfContent.value) {
+          pdfContent.value.removeEventListener('scroll', debouncedHandleScroll)
+        }
       })
     })
 
@@ -272,8 +401,7 @@ export default defineComponent({
       totalPages,
       prevPage,
       nextPage,
-      onPdfLoaded,
-      handleScroll
+      onPdfLoaded
     }
   }
 })
