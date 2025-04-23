@@ -26,6 +26,7 @@ from api.responses.document_upload import (
     ThumbnailInfo,
     DocumentRetrieveResponseForPage,
     NoteResponse,
+    DoclingStructuredData,
 )
 from api.utils.s3_utils import verify_s3_object
 from typing import Annotated
@@ -155,8 +156,23 @@ async def upload_document(
             directory_path=directory_path,
         )
 
-        # Kick of background job to process document
+        # Kick off background jobs to process document
+
+        # Existing processor
         process_document(document_id=str(doc_id))
+
+        # NEW: Add Docling processor for academic papers
+        # Only process PDFs and certain document types with Docling
+        if reqBody.file_type.lower() in [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ]:
+            from background.huey_jobs.process_document_v2_job import (
+                process_document_with_docling,
+            )
+
+            process_document_with_docling(document_id=str(doc_id))
+            logger.info(f"Scheduled Docling processing for document: {doc_id}")
 
         try:
             result: InsertOneResult = await collection.insert_one(document)
@@ -209,7 +225,13 @@ async def get_document(
         # Avoid fetching the entire document, with the potentially long extracted text
         document = await collection.find_one(
             {"_id": obj_id, "user_id": user_id},
-            {"_id": 1, "file_details": 1, "custom_title": 1, "extracted_metadata": 1},
+            {
+                "_id": 1,
+                "file_details": 1,
+                "custom_title": 1,
+                "extracted_metadata": 1,
+                "docling_structured_data.outline": 1,
+            },
         )
 
         if not document:
@@ -249,11 +271,15 @@ async def get_document(
             directory_path=(
                 document["directory_path"] if document.get("directory_path") else None
             ),
+            docling_structured_data=DoclingStructuredData(
+                outline=document.get("docling_structured_data", {}).get("outline")
+            ),
         )
     except HTTPException as e:
         raise e
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid document ID")
+    except ValueError as e:
+        logger.error(f"Error fetching document: {str(e)}")
+        raise HTTPException(status_code=400, detail="Failed to fetch document")
     except Exception as e:
         logger.error(f"Error fetching document: {str(e)}")
         raise HTTPException(

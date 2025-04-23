@@ -37,8 +37,18 @@ class DocumentRetrieveResponseForPage(DocumentUploadResponse):
     ]
 
 
+class DoclingStructuredData(BaseModel):
+    outline: Annotated[
+        Optional[List[Dict[str, Any]]],
+        "Hierarchical outline of the document extracted via Docling",
+    ]
+
+
 class DocumentRetrieveResponse(DocumentUploadResponse):
     presigned_url: Annotated[str, "pre-signed URL to document file in S3"]
+    docling_structured_data: Annotated[
+        Optional[DoclingStructuredData], "Structured data extracted from document"
+    ]
 
 
 class DocumentUploadImportExternalResponse(BaseModel):

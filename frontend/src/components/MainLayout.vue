@@ -1,3 +1,4 @@
+<!-- src/components/MainLayout.vue -->
 <template>
   <div class="flex h-screen bg-gradient-to-br from-indigo-50 to-blue-100 overflow-hidden">
     <!-- Left Panel: Document Viewer -->
@@ -102,6 +103,7 @@ import SpreadsheetViewer from '@/components/Viewers/SpreadsheetViewer.vue'
 import NotepadComponent from '@/components/NotepadComponent.vue'
 import type { DocumentDetails } from '@/types'
 import api from '@/api/axios'
+import { useDocumentStore } from '@/store/document'
 
 export default defineComponent({
   name: 'MainLayout',
@@ -135,6 +137,7 @@ export default defineComponent({
     const fileType = ref('')
     const selectedText = ref('')
     const fileName = ref('')
+    const documentStore = useDocumentStore()
 
     // Use the document title composable
     const { documentTitle, documentUploadId, setDocumentTitle, setDocumentId } = useDocumentTitle()
@@ -158,6 +161,24 @@ export default defineComponent({
       const selection = window.getSelection()
       if (selection && selection.toString().trim().length > 0) {
         selectedText.value = selection.toString().trim()
+      }
+    }
+
+    const fetchDocumentDetails = async (id: string) => {
+      try {
+        const response = await api.get<DocumentDetails>(`/document-uploads/${id}`)
+        contentUrl.value = response.data.presigned_url
+        setDocumentId(id)
+        fileType.value = response.data.file_type
+        fileName.value = response.data.file_name
+        setDocumentTitle(response.data.title)
+
+        // Also fetch document details for the outline
+        // TODO: THIS IS REDUNDANT, WE SHOULD ONLY FETCH ONCE
+        await documentStore.fetchDocumentDetails(id)
+      } catch (error) {
+        console.error('Error fetching document details:', error)
+        // Handle error (e.g., show error message to user)
       }
     }
 
@@ -230,20 +251,6 @@ export default defineComponent({
           leftPanelWidth.value = newLeftWidth
           rightPanelWidth.value = newRightWidth
         }
-      }
-    }
-
-    const fetchDocumentDetails = async (id: string) => {
-      try {
-        const response = await api.get<DocumentDetails>(`/document-uploads/${id}`)
-        contentUrl.value = response.data.presigned_url
-        setDocumentId(id)
-        fileType.value = response.data.file_type
-        fileName.value = response.data.file_name
-        setDocumentTitle(response.data.title)
-      } catch (error) {
-        console.error('Error fetching document details:', error)
-        // Handle error (e.g., show error message to user)
       }
     }
 
