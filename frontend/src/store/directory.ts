@@ -383,24 +383,24 @@ export const useDirectoryStore = defineStore('directory', {
         this.breadcrumbs = [{ _id: null, name: 'Home', path: '/' }]
 
         // Fetch root contents with fromRoute=true flag
-        await this.navigateToDirectory(null, true)
+        await this.navigateToDirectory(null, { updateUrl: true, fetchContent: true })
         return
       }
 
       if (id) {
         // Use the ID directly if provided (fromRoute=true)
-        await this.navigateToDirectory(id, true)
+        await this.navigateToDirectory(id, { updateUrl: true, fetchContent: true })
       } else {
         // Find by path as fallback
         const formattedPath = path.startsWith('/') ? path : `/${path}`
         const directory = this.directories.find((dir) => dir.path === formattedPath)
 
         if (directory) {
-          await this.navigateToDirectory(directory._id, true)
+          await this.navigateToDirectory(directory._id, { updateUrl: true, fetchContent: true })
         } else {
           // Fallback to root with warning
           console.warn(`Directory with path ${formattedPath} not found, navigating to root`)
-          await this.navigateToDirectory(null, true)
+          await this.navigateToDirectory(null, { updateUrl: true, fetchContent: true })
         }
       }
     },

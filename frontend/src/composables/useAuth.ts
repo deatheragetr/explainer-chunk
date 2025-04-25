@@ -1,11 +1,11 @@
 // src/composables/useAuth.ts
 import { computed, type ComputedRef } from 'vue'
-import { useStore, Store } from 'vuex'
+import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { type AuthState } from '@/store/auth' // Make sure to export AuthState from your store file
 
 export function useAuth() {
-  const store: Store<AuthState> = useStore()
+  const store = useStore()
   const router = useRouter()
 
   const user: ComputedRef<AuthState['user']> = computed(() => store.state.user)

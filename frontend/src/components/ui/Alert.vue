@@ -24,9 +24,11 @@ import {
   InformationCircleIcon
 } from '@heroicons/vue/24/solid'
 
+type AlertVariant = 'info' | 'success' | 'warning' | 'error'
+
 const props = defineProps({
   variant: {
-    type: String,
+    type: String as () => AlertVariant,
     default: 'info',
     validator: (value: string) => ['info', 'success', 'warning', 'error'].includes(value)
   },
@@ -36,7 +38,11 @@ const props = defineProps({
   }
 })
 
-const variantClasses = {
+defineOptions({
+  name: 'AlertMessage'
+})
+
+const variantClasses: Record<AlertVariant, string> = {
   info: 'bg-blue-50 border border-blue-200',
   success: 'bg-green-50 border border-green-200',
   warning: 'bg-yellow-50 border border-yellow-200',

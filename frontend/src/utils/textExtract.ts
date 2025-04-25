@@ -78,10 +78,11 @@ async function extractFromPDF(
   updateProgress('fetching metadata', 90)
   const info = await pdf.getMetadata()
   if (info?.info) {
-    metadata.title = info.info.Title
-    metadata.author = info.info.Author
-    metadata.subject = info.info.Subject
-    metadata.keywords = info.info.Keywords
+    const pdfInfo = info.info as Record<string, any>
+    metadata.title = pdfInfo.Title
+    metadata.author = pdfInfo.Author
+    metadata.subject = pdfInfo.Subject
+    metadata.keywords = pdfInfo.Keywords
   }
 
   return { text, metadata }
@@ -107,7 +108,7 @@ async function extractFromEPUB(
         await book.ready
 
         const spine: Spine = book.spine
-        const spineItems = spine.items
+        const spineItems = (spine as any).items
 
         for (let i = 0; i < spineItems.length; i++) {
           const item = spineItems[i]

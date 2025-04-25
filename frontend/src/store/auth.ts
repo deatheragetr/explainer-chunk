@@ -1,5 +1,5 @@
 // src/store/auth.ts
-import { createStore, type Commit } from 'vuex'
+import { createStore } from 'vuex'
 import axios, { type AxiosInstance } from 'axios'
 import router from '@/router'
 
@@ -23,7 +23,11 @@ export interface AuthState {
   initialCheckDone: boolean
 }
 
-export default createStore<AuthState>({
+// Define commit function type
+type CommitFn = (type: string, payload?: any) => void
+
+// Create the store without type arguments
+const store = createStore({
   state: {
     user: null,
     accessToken: localStorage.getItem('accessToken') || null,
@@ -58,7 +62,7 @@ export default createStore<AuthState>({
   },
   actions: {
     async login(
-      { commit }: { commit: Commit },
+      { commit }: { commit: CommitFn },
       { email, password }: { email: string; password: string }
     ) {
       const formData = new URLSearchParams()
@@ -87,7 +91,7 @@ export default createStore<AuthState>({
       return response.data
     },
 
-    async logout({ commit }: { commit: Commit }) {
+    async logout({ commit }: { commit: CommitFn }) {
       try {
         await plainApi.post('/auth/logout', {}, { withCredentials: true })
       } catch (error) {
@@ -99,7 +103,7 @@ export default createStore<AuthState>({
       }
     },
 
-    async logoutAll({ commit }: { commit: Commit }) {
+    async logoutAll({ commit }: { commit: CommitFn }) {
       try {
         await plainApi.post('/auth/logout-all', {}, { withCredentials: true })
       } catch (error) {
@@ -111,7 +115,7 @@ export default createStore<AuthState>({
       }
     },
 
-    async refreshToken({ commit }: { commit: Commit }): Promise<string> {
+    async refreshToken({ commit }: { commit: CommitFn }): Promise<string> {
       try {
         // Critical: Must use "plainAPI", not the imported api with refresh interceptors, which can cause an infinite loop
         const response = await plainApi.post<{ user: User; access_token: string }>(
@@ -130,12 +134,12 @@ export default createStore<AuthState>({
     },
 
     // This action is called directly from axios.ts when we need to clear auth state
-    clearUserData({ commit }: { commit: Commit }) {
+    clearUserData({ commit }: { commit: CommitFn }) {
       commit('clearUserData')
     },
 
     async changePassword(
-      { commit }: { commit: Commit },
+      { commit }: { commit: CommitFn },
       { current_password, new_password }: { current_password: string; new_password: string }
     ): Promise<void> {
       const response = await plainApi.post('/auth/change-password', {
@@ -148,7 +152,7 @@ export default createStore<AuthState>({
     },
 
     async updateEmail(
-      { commit }: { commit: Commit },
+      { commit }: { commit: CommitFn },
       { newEmail }: { newEmail: string }
     ): Promise<void> {
       const response = await plainApi.put('/auth/users/me/email', { email: newEmail })
@@ -157,7 +161,7 @@ export default createStore<AuthState>({
       commit('setIsLoggedIn', true)
     },
 
-    async checkAuth({ commit, dispatch }: { commit: Commit; dispatch: any }) {
+    async checkAuth({ commit, dispatch }: { commit: CommitFn; dispatch: any }) {
       const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true'
 
       if (isLoggedIn) {
@@ -195,3 +199,5 @@ export default createStore<AuthState>({
     }
   }
 })
+
+export default store
