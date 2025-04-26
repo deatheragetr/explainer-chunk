@@ -36,11 +36,15 @@ APP_BASE_URL = os.getenv(
     "APP_BASE_URL", "localhost:5173"
 )  # This is the URL of the frontend app
 
-# Setup logging based on environment
+LOG_LEVEL = os.getenv("LOG_LEVEL")
 if ENV == "production":
-    logger = setup_logging(log_level="INFO", log_to_file=True, log_file="app.log")
+    effective_log_level = LOG_LEVEL or "INFO"
+    logger = setup_logging(
+        log_level=effective_log_level, log_to_file=True, log_file="app.log"
+    )
 else:
-    logger = setup_logging(log_level="DEBUG")  # More verbose for development
+    effective_log_level = LOG_LEVEL or "DEBUG"
+    logger = setup_logging(log_level=effective_log_level)
 
 
 @asynccontextmanager
