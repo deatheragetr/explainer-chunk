@@ -166,6 +166,8 @@ export default defineComponent({
     const MAX_RECONNECT_ATTEMPTS = 5
     const scrollPosition = ref(0)
     const isInitialLoad = ref(true)
+    const baseApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+    const baseWsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 
     const saveScrollPosition = () => {
       if (chatContainer.value) {
@@ -188,9 +190,7 @@ export default defineComponent({
         return
       }
 
-      socket = new WebSocket(
-        `ws://localhost:8000/ws/document-upload/${props.documentUploadId}/chat`
-      )
+      socket = new WebSocket(`${baseWsUrl}/ws/document-upload/${props.documentUploadId}/chat`)
 
       socket.onopen = () => {
         console.log('WebSocket connected for chat')
@@ -292,13 +292,10 @@ export default defineComponent({
           if (!socket || socket.readyState !== WebSocket.OPEN) {
             connectWebSocket()
           }
-          await axios.post(
-            `http://localhost:8000/documents/${props.documentUploadId}/chat/messages`,
-            {
-              message_content: userMessage,
-              model: selectedModel.value
-            }
-          )
+          await axios.post(`${baseApiUrl}/documents/${props.documentUploadId}/chat/messages`, {
+            message_content: userMessage,
+            model: selectedModel.value
+          })
 
           scrollToBottom(true)
         } catch (err) {
@@ -330,7 +327,7 @@ export default defineComponent({
 
       try {
         const response = await axios.get(
-          `http://localhost:8000/documents/${props.documentUploadId}/chat/messages`,
+          `${baseApiUrl}/documents/${props.documentUploadId}/chat/messages`,
           {
             params: {
               model: selectedModel.value,

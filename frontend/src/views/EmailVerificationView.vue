@@ -53,9 +53,10 @@ const redirectCountdown = ref(5)
 
 onMounted(async () => {
   const token = route.query.token as string
+  const baseApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
   try {
-    const response = await axios.post('http://localhost:8000/auth/verify-email', { token })
+    const response = await axios.post(`${baseApiUrl}/auth/verify-email`, { token })
     verificationStatus.value = {
       success: true,
       title: 'Email Verified!',
