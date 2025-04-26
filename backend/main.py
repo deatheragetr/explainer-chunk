@@ -32,6 +32,9 @@ from db.indices.ensure_indices import ensure_indices_with_manager
 
 # Determine environment
 ENV = os.getenv("ENV", "development")
+APP_BASE_URL = os.getenv(
+    "APP_BASE_URL", "localhost:5173"
+)  # This is the URL of the frontend app
 
 # Setup logging based on environment
 if ENV == "production":
@@ -74,7 +77,7 @@ app = FastAPI(lifespan=lifespan)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Update this with your Vue.js app's URL
+    allow_origins=[APP_BASE_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
