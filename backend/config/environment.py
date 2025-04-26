@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Optional
 
 
 class AppSettings(BaseSettings):
