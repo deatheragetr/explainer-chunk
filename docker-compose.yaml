@@ -97,6 +97,14 @@ services:
     ports:
       - "9200:9200"
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - frontend-build:/app/dist
+
   nginx:
     image: nginx:latest
     ports:
@@ -104,11 +112,12 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./nginx/ssl:/etc/nginx/ssl
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
+      - frontend-build:/usr/share/nginx/html
     depends_on:
       - backend
+      - frontend
     restart: unless-stopped
 
   certbot:
@@ -124,3 +133,4 @@ volumes:
   mongo-data:
   redis-data:
   elasticsearch-data:
+  frontend-build:
