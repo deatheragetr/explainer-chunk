@@ -80,7 +80,7 @@ services:
       - ELASTICSEARCH_INDEX_PREFIX=${ELASTICSEARCH_INDEX_PREFIX}
     volumes:
       - ./backend:/app
-    command: python -m huey.bin.huey_consumer main.huey
+    command: python -m huey.bin.huey_consumer main.huey -w 4
 
   mongo:
     image: mongo:latest
