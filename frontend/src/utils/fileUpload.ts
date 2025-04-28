@@ -10,6 +10,8 @@ const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks, minimum chunk size S3 allows
 const MAX_RETRIES = 3
 const RETRY_DELAY = 1000 // 1 second
 
+const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 interface MultipartUploadInitResponse {
   uploadId: string
   fileKey: string
@@ -56,7 +58,7 @@ async function initiateMultipartUpload(
   file_name: string,
   fileType: string
 ): Promise<MultipartUploadInitResponse> {
-  const response: AxiosResponse = await axios.post('http://localhost:8000/multipart-upload/', {
+  const response: AxiosResponse = await axios.post(`${apiUrl}/multipart-upload/`, {
     file_name,
     file_type: fileType
   })
@@ -84,7 +86,7 @@ async function completeMultipartUpload(
   fileKey: string,
   parts: PartUploadResult[]
 ): Promise<void> {
-  await axios.put(`http://localhost:8000/multipart-upload/${uploadId}`, {
+  await axios.put(`${apiUrl}/multipart-upload/${uploadId}`, {
     file_key: fileKey,
     parts
   })
@@ -95,7 +97,7 @@ async function generatePresignedUrl(
   fileKey: string,
   partNumber: number
 ): Promise<PresignedUrlResponse> {
-  const response: AxiosResponse = await axios.post('http://localhost:8000/upload-url/', {
+  const response: AxiosResponse = await axios.post(`${apiUrl}/upload-url/`, {
     upload_id: uploadId,
     file_key: fileKey,
     part_number: partNumber

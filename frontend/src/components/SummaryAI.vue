@@ -156,6 +156,7 @@ export default defineComponent({
     let websocket: WebSocket | null = null
     let reconnectAttempts = 0
     const MAX_RECONNECT_ATTEMPTS = 5
+    const baseWsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 
     const updateFormattedSummary = async () => {
       try {
@@ -197,9 +198,7 @@ export default defineComponent({
         return
       }
 
-      websocket = new WebSocket(
-        `ws://localhost:8000/ws/document-upload/${props.documentUploadId}/summary`
-      )
+      websocket = new WebSocket(`${baseWsUrl}/ws/document-upload/${props.documentUploadId}/summary`)
 
       websocket.onopen = () => {
         console.log('WebSocket connected for summary')

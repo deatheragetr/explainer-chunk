@@ -109,7 +109,9 @@ router.beforeEach(async (to, from, next) => {
   // In router, fetch content but don't update URL
   if (to.name === 'directory' && to.params.id) {
     const directoryStore = useDirectoryStore()
-    await directoryStore.navigateToDirectory(to.params.id, { updateUrl: false, fetchContent: true })
+    // Convert the id parameter to a string if it's an array
+    const directoryId = Array.isArray(to.params.id) ? to.params.id[0] : to.params.id
+    await directoryStore.navigateToDirectory(directoryId, { updateUrl: false, fetchContent: true })
   } else if (to.name === 'home') {
     const directoryStore = useDirectoryStore()
     await directoryStore.navigateToDirectory(null, { updateUrl: false, fetchContent: true })

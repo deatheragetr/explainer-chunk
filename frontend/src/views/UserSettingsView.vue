@@ -20,7 +20,7 @@
           <div class="flex items-center justify-between">
             <div>
               <p class="text-sm text-gray-500">Email</p>
-              <p class="mt-1 text-sm text-gray-900">{{ user?.email }}</p>
+              <p class="mt-1 text-sm text-gray-900">{{ userData?.email }}</p>
             </div>
             <button
               @click="showUpdateEmailModal = true"
@@ -33,13 +33,15 @@
             <span
               :class="[
                 'px-3 py-1 text-xs font-medium rounded-full',
-                user?.is_verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                userData?.is_verified
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-yellow-100 text-yellow-800'
               ]"
             >
-              {{ user?.is_verified ? 'Verified' : 'Not Verified' }}
+              {{ userData?.is_verified ? 'Verified' : 'Not Verified' }}
             </span>
             <button
-              v-if="!user?.is_verified"
+              v-if="!userData?.is_verified"
               @click="resendVerificationEmail"
               class="ml-2 text-sm text-indigo-600 hover:text-indigo-800 transition-colors duration-300"
             >
@@ -217,8 +219,29 @@ import { useAuth } from '@/composables/useAuth'
 import api from '@/api/axios'
 import Alert from '@/components/ui/Alert.vue'
 
-const { user, logout, logoutAll, changePassword, updateEmail } = useAuth()
-const sessions = ref([])
+// Define interface for user data
+interface UserData {
+  email: string
+  is_verified: boolean
+  [key: string]: any
+}
+
+// Define interface for session data
+interface SessionData {
+  user_agent: string
+  ip: string
+  created_at: string
+  geolocation: {
+    city: string
+    country: string
+  }
+  [key: string]: any
+}
+
+const { logout, logoutAll, changePassword, updateEmail } = useAuth()
+// Create a local user state to display user information
+const userData = ref<UserData | null>(null)
+const sessions = ref<SessionData[]>([])
 const showUpdateEmailModal = ref(false)
 const newEmail = ref('')
 const error = ref('')
@@ -238,7 +261,7 @@ onMounted(async () => {
 async function fetchUserData() {
   try {
     const response = await api.get('/auth/users/me')
-    user.value = response.data
+    userData.value = response.data
   } catch (err) {
     error.value = 'Error fetching user data'
   }
@@ -301,7 +324,7 @@ async function logoutAllSessions() {
 async function resendVerificationEmail() {
   // Implement this function to resend verification email
   // You'll need to add an endpoint for this on your backend
-  if (user?.is_verified) {
+  if (userData.value?.is_verified) {
     error.value = 'User already verified'
   }
   try {

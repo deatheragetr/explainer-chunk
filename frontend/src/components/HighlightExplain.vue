@@ -156,6 +156,7 @@ export default defineComponent({
     let socket: WebSocket | null = null
     let reconnectAttempts = 0
     const MAX_RECONNECT_ATTEMPTS = 5
+    const baseWsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 
     const formattedSelectedText = computed(() => {
       if (!selectedText.value) return ''
@@ -193,7 +194,7 @@ export default defineComponent({
       }
 
       socket = new WebSocket(
-        `ws://localhost:8000/ws/document-upload/${props.documentUploadId}/text-explanation`
+        `${baseWsUrl}/ws/document-upload/${props.documentUploadId}/text-explanation`
       )
 
       socket.onopen = () => {

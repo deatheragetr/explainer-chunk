@@ -122,7 +122,8 @@ class OpenAIAssistantService:
 
             # Update the MongoDB document with the new AssistantDetails
             await mongo_collection.update_one(
-                {"_id": document["_id"]}, {"$push": {"assistants": assistant_details}}
+                {"_id": document["_id"]},
+                {"$push": {"openai_assistants": assistant_details}},
             )
 
             return assistant_details

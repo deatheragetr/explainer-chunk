@@ -21,7 +21,7 @@ from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
 # Correct import for Elasticsearch
 from elasticsearch import AsyncElasticsearch
-from config.elasticsearch import ElasticsearchSettings
+from config.environment import ElasticsearchSettings
 
 # Import OpenAI for embeddings
 from openai import AsyncOpenAI

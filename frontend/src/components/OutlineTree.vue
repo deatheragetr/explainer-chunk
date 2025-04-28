@@ -14,6 +14,16 @@ const documentStore = useDocumentStore()
 
 const outline = computed(() => documentStore.outline)
 
+// Define outline item interface
+interface OutlineItem {
+  id: string | number
+  text: string
+  type: string
+  page_number: number
+  parent_id: string | number | null
+  children?: OutlineItem[]
+}
+
 // Organize outline items into a hierarchical structure
 const outlineTree = computed(() => {
   if (!outline.value || outline.value.length === 0) {
@@ -21,7 +31,7 @@ const outlineTree = computed(() => {
   }
 
   // Create a map of items by their ID
-  const itemMap = new Map()
+  const itemMap = new Map<string | number, OutlineItem>()
 
   // First pass: add all items to the map
   outline.value.forEach((item) => {
@@ -29,21 +39,21 @@ const outlineTree = computed(() => {
   })
 
   // Second pass: build the tree structure
-  const rootItems = []
+  const rootItems: OutlineItem[] = []
 
   outline.value.forEach((item) => {
     const node = itemMap.get(item.id)
 
     if (item.parent_id === null) {
       // This is a root level item
-      rootItems.push(node)
+      rootItems.push(node as OutlineItem)
     } else if (itemMap.has(item.parent_id)) {
       // This is a child item, add it to its parent's children
       const parent = itemMap.get(item.parent_id)
-      parent.children.push(node)
+      parent?.children?.push(node as OutlineItem)
     } else {
       // If parent not found, add to root
-      rootItems.push(node)
+      rootItems.push(node as OutlineItem)
     }
   })
 
@@ -51,7 +61,7 @@ const outlineTree = computed(() => {
 })
 
 // Function to handle clicking on an outline item
-const navigateToPage = (pageNumber) => {
+const navigateToPage = (pageNumber: number) => {
   documentStore.setCurrentPage(pageNumber)
 }
 </script>

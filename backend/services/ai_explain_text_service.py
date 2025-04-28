@@ -45,6 +45,15 @@ class AIExplainTextService:
                 f"AI Explain Text Service: Document with ID {document_upload_id} not found"
             )
 
+        # Print all document fields except extracted_text and docling_structured_data
+        debug_doc = {
+            k: v
+            for k, v in document.items()
+            if k not in ["extracted_text", "docling_structured_data"]
+        }
+        logger.debug(f"Document fields: {debug_doc}")
+        logger.debug(f"Model pair config: {model_pair_config}")
+
         openai_assistant = find_assistant_by_model(
             document, model_pair_config["model_name"]
         )

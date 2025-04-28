@@ -31,7 +31,7 @@
           annotation-layer
           :source="contentUrl"
           :width="containerWidth"
-          :page="null"
+          :page="undefined"
           @loaded="onPdfLoaded"
         />
       </div>

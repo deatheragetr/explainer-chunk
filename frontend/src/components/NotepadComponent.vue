@@ -91,9 +91,8 @@ export default defineComponent({
 
     const renderedMarkdown = computed(() => {
       const renderer = new marked.Renderer()
-      renderer.code = (code, lang) => {
-        const rawCode = typeof code === 'object' && code.raw ? code.raw : code
-        // Extract the actual code content (remove backticks and language specifier)
+      renderer.code = (code: string | { raw: string }, lang?: string) => {
+        const rawCode: string = typeof code === 'object' && code.raw ? code.raw : (code as string)
         const codeText = rawCode.replace(/^```[\w-]*\n|```$/g, '')
 
         // Use the lang parameter, or try to extract it from the raw code, or default to 'plaintext'
@@ -108,7 +107,7 @@ export default defineComponent({
 
       marked.setOptions({ renderer })
 
-      const rawHtml = marked(markdownContent.value)
+      const rawHtml = marked(markdownContent.value) as string
       const cleanHtml = DOMPurify.sanitize(rawHtml)
 
       // We need to run Prism again after the content is inserted into the DOM
@@ -130,8 +129,12 @@ export default defineComponent({
           gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
           extraKeys: {
             Enter: 'newlineAndIndentContinueMarkdownList',
-            'Ctrl-S': saveNote,
-            'Cmd-S': saveNote
+            'Ctrl-S': (cm: CodeMirror.Editor) => {
+              saveNote()
+            },
+            'Cmd-S': (cm: CodeMirror.Editor) => {
+              saveNote()
+            }
           }
         })
 

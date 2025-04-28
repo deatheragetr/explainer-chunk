@@ -411,7 +411,9 @@ export default defineComponent({
     }
 
     const connectWebSocket = (connectionId: string) => {
-      websocket.value = new WebSocket(`ws://localhost:8000/ws/document-upload/${connectionId}`)
+      websocket.value = new WebSocket(
+        `${import.meta.env.VITE_WS_URL}/ws/document-upload/${connectionId}`
+      )
 
       websocket.value.onopen = () => {
         console.log('WebSocket connected')
