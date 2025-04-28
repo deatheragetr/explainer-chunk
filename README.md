@@ -1,6 +1,8 @@
 # ExplainerChonk: Enhancing Comprehension of Research Texts through Human-AI Collaboration
 
-## How-To: Running as "Production" like app with docker
+![image](https://github.com/user-attachments/assets/283c02a8-7e25-4f83-bc81-cd617637c392)
+
+## How-To: Running as a production-like app with docker
 
 ## Initial requirements
 
