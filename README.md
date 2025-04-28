@@ -25,6 +25,6 @@ Setting up SSL with Let's Encrypt and cerbot is a chicken and egg problem. Nginx
 2. `cp backend/.env.example backend/.env`; Adjust anything as appropriate in `.env`
 3. `cp frontend/.env.example frontend/.env`; Adjust anything as appropriate in `.env`
 4. `docker compose -f compose-local.yaml up --build`
-5. (from another terminal) `cd backend && uvicorn main:app --reload`
-6. (from another terminal) `cd frontend && npm run dev`
+5. (from another terminal) `cd backend && pip install -r requirements.txt && uvicorn main:app --reload`
+6. (from another terminal) `cd frontend && npm install && npm run dev`
 7. (from another terminal) `cd backend && huey_consumer.py main.huey`
